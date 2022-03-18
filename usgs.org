@@ -1,0 +1,7 @@
+#+TITLE: USGS Data, Packages, and Functions
+
+* Notes
+** mda.streams package
+- [ ] replace all instances of deprecated *filter_*
+- [ ] make *site_nwis_ts* function time parameter default to empty "" that signify using earliest available record for queried site. currently throws error in POSIX as.date or something
+- [-] put in optional progress bar in *site_nwis_ts*?
