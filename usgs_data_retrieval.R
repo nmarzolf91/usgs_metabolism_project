@@ -32,7 +32,12 @@ for (var_code in var_codes) {
                           folder="./data/tmp")
 
         setTxtProgressBar(pb, i)
-        print(paste("pulled", var_code, site_code))
+
+        if(nrow(q_data) == 0 {
+          print(paste("---- warning: pulled data empty", site_code, var_code))
+        } else {
+          print(paste("pulled", var_code, site_code))
+        }
       },
       error = function(e) {
         print(paste("---- error:", site_code))
