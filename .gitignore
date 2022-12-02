@@ -2,7 +2,26 @@
 .idea
 *.log
 tmp/
+.Rhistory
 
+# data
 data/
+
+# temp files
 temp/data/
 temp/org/
+
+# R project user files
+.Rproj.user
+usgs_metabolism_project.Rproj
+
+# figures
+figures/
+
+# manuscript files
+manuscript/
+
+# random code files that aren't ready for publication
+code/metab_plots.R
+code/metab_streamlight.R
+
