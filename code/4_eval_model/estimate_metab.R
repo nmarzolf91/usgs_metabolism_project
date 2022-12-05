@@ -31,11 +31,8 @@ estimates <- unz('C:/Users/Nick Marzolf/Downloads/daily_predictions.zip',
 names(estimates)
 
 
-# identify directory where model results are stored
-model_dir <- 'data/model_runs/bayes_all/'
 
-
-estimate_metab <- function(model_dir) {
+estimate_metab <- function(model_dir = 'data/model_runs/bayes_all/') {
   n_mods <- length(list.files(glue(model_dir, 'daily')))
   
   # estimates <- data.frame(site = character(),
@@ -144,11 +141,13 @@ estimate_metab <- function(model_dir) {
   estimates <- map_dfr(list.files(glue(model_dir, 'estimates'), full.names = TRUE),
                        read_csv)
   
+  write_csv(estimates,
+          'data/model_runs/estimates_2007-2021.csv')
+  
   return(estimates)
 }
 
-write_csv(estimates,
-          'data/model_runs/estimates_2007-2021.csv')
+
 
 
 

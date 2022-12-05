@@ -1,0 +1,905 @@
+---
+title: "Part III: Plotting, supplementation, and export of stats dataset"
+author: "Mike Vlah"
+date: "Last updated on `r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "documentation") })
+---
+
+# Description
+
+<font size="5">Summary of major workflow components</font> 
+
+This workflow is part of a series that describes the preparation of data used in [Bernhardt et al. (2022)](https://doi.org/10.1073/pnas.2121976119). The creation of this dataset consists of several sub workflows as described below.
+
+* **Part I: Standardized dataset creation:** Part I is the preparation of standardized datasets of stream metabolism from the [StreamPULSE data portal](https://data.streampulse.org/) and terrestrial ecosystem fluxes from the [FLUXNET2015 dataset](https://fluxnet.org/data/fluxnet2015-dataset/). Everything generated in Part I is included in `output_data`, so you may start with Part II.
+
+* **Part II. Filtering, gap-filling, and calculating metrics:** In Part II the standardized dataset of lotic and terrestrial metabolism data was filtered down to the subset of sites used in Bernhardt et al. (2022). After filtering, additional descriptive metrics were calculated to use in analysis.
+
+* **Part III. Plotting and export of stats dataset:** Datasets from part II are minimally subsetted and recast for plotting convenience. Figures 1-6 are generated.
+
+* **Part IV. Structural equation modeling:** Code used for structural equation model (SEM) analysis on annual metabolism dataset. We used an observed variables model to estimates the effect of light (PAR reaching the stream surface) and hydrologic variability (skewness of daily discharge) on annual river GPP.  
+
+# Setup
+
+See code for details
+
+```{r setup, message = FALSE}
+library(plyr)
+library(tidyverse)
+library(RColorBrewer)
+library(plotrix)
+library(here)
+```
+
+```{r setup2, message = FALSE}
+
+dir.create(here('figures'),
+           showWarnings = FALSE)
+
+#choose colors for plot categories
+fnetcolor = 'sienna4'
+spcolor = 'cadetblue4'
+gppcolor = 'forestgreen'
+ercolor = 'sienna'
+
+source(here('plot_helpers.R'))
+```
+
+# Load site data from Part II
+
+Columns Stream_PAR_sum, Disch_ar1, MOD_ann_NPP will be used in plots.
+
+```{r load site data, message = FALSE}
+
+site_data_1 = readRDS(here('output_data', 'lotic_site_info_filtered.rds')) %>%
+    as_tibble() %>%
+    select(sitecode = Site_ID,
+           Stream_PAR_sum, Disch_ar1, Disch_skew, MOD_ann_NPP, nyears, ndays, coverage)
+
+```
+
+# Load and prepare fluxnet data
+
+We're beginning from two previously generated datasets here. The first is `fluxnet_filtered_metabolism.rds`, a collection of data.frames for each terrestrial site, organized in a list. We'll cast that to one big tibble, select and rename a few columns, calculate NEP from GPP and ER, and determine a mean value for each of those metrics for each DOY, across years. The resulting dataset (summarized by site and DOY) is the basis for the "lips plots" that show median GPP, ER, and NEP (and GPP and ER ranges) over the course of an average year. For every other plot, we use a tibble that summarizes terrestrial data by site, called `fnet_site`.
+
+```{r load site data fnet, message = FALSE}
+
+restricted_use_sites = c("RU-Sam", "RU-SkP", "RU-Tks", "RU-Vrk", "SE-St1", "ZA-Kru")
+
+#summarize by site, starting with a dataset that's summarized by site-year
+fnet_ann = readRDS(here('output_data', 'fluxnet_filtered_metabolism.rds'))
+fnet_names = names(fnet_ann)
+
+for(i in 1:length(fnet_ann)){
+    fnet_ann[[i]]$sitecode = fnet_names[i]
+}
+
+fnet_ann = fnet_ann[! fnet_names %in% restricted_use_sites]
+
+fnet_full = Reduce(bind_rows, fnet_ann) %>%
+    as_tibble() %>%
+    filter(sitecode != 'CZ-BK2')
+
+fnet_site = readRDS(here('output_data', 'fluxnet_site_info_filtered.rds')) %>%
+    as_tibble() %>%
+    select(sitecode = Site_ID,
+           GPP_site_mean = ann_GPP,
+           ER_site_mean = ann_ER) %>%
+    filter(! is.na(GPP_site_mean), #CZ-BK2 has NaN
+           ! is.na(ER_site_mean)) %>%
+    mutate(NEP_site_mean = GPP_site_mean + ER_site_mean) %>%
+    arrange(sitecode)
+
+#summarize by DOY for lips plots
+fnet_lips = fnet_full %>%
+    select(sitecode, GPP, ER, DOY, Year) %>%
+    group_by(sitecode, DOY) %>%
+    summarize(GPP = mean(GPP, na.rm=TRUE), #average metab by day across years
+              ER = mean(ER, na.rm=TRUE)) %>%
+    ungroup() %>%
+    arrange(sitecode, DOY) %>%
+    rename(GPP_C_filled = GPP, ER_C_filled = ER) %>%
+    mutate(NEP_C_filled = GPP_C_filled + ER_C_filled)
+```
+
+# Load and prepare streampulse data
+
+Same procedures as for FLUXNET (terrestrial) data, here applied to StreamPULSE (aquatic) data.
+
+```{r load site data sp, message = FALSE}
+sp_list = readRDS(here('output_data', 'lotic_gap_filled.rds'))
+
+#summarize by site
+sp_names = names(sp_list)
+
+for(i in 1:length(sp_list)){
+    sp_list[[i]]$sitecode = sp_names[i]
+}
+
+sp_full = Reduce(bind_rows, sp_list) %>%
+    as_tibble() %>%
+    select(sitecode, Date, Year, DOY, GPP_C, ER_C, GPP_C_filled, ER_C_filled) %>%
+    arrange(sitecode, Date)
+
+sp_site = sp_full %>%
+    group_by(sitecode, Year) %>%
+    summarize(GPP_ann_sum = sum(GPP_C_filled, na.rm = TRUE),
+              ER_ann_sum = sum(ER_C_filled, na.rm = TRUE)) %>%
+    ungroup() %>%
+    group_by(sitecode) %>%
+    summarize(GPP_site_mean = mean(GPP_ann_sum, na.rm = TRUE),
+              ER_site_mean = mean(ER_ann_sum, na.rm = TRUE)) %>%
+    ungroup() %>%
+    arrange(sitecode) %>%
+    mutate(NEP_site_mean = GPP_site_mean + ER_site_mean) %>%
+    left_join(site_data_1, by = 'sitecode')
+
+#summarize by DOY for lips plots
+sp_lips = sp_full %>%
+    select(sitecode, Year, DOY, GPP_C_filled, ER_C_filled) %>%
+    group_by(sitecode, DOY) %>%
+    summarize(GPP_C_filled = mean(GPP_C_filled, na.rm=TRUE), #average metab by day across years
+              ER_C_filled = mean(ER_C_filled, na.rm=TRUE)) %>%
+    ungroup() %>%
+    arrange(sitecode, DOY) %>%
+    mutate(NEP_C_filled = GPP_C_filled + ER_C_filled) %>%
+    left_join(site_data_1, by = 'sitecode') #include site data
+```
+
+# Split sites by coverage
+
+For some plots, we use different markers to indicate sites with high coverage for metabolism estimates (>= 80% of days across years) and those with low coverage (< 80% of days). Here we create vectors of sitecodes that fit each of these criteria, and boolean vectors representing the same, to be used for subsetting later.
+
+```{r split by coverage, message = FALSE}
+
+coverage_sp = site_data_1 %>%
+    select(sitecode, ndays, nyears, coverage)
+
+coverage_fnet = readRDS(here('output_data', 'fluxnet_site_info_filtered.rds')) %>%
+    as_tibble() %>%
+    select(sitecode = Site_ID,
+           nyears, ndays, coverage) %>%
+    filter(sitecode != 'CZ-BK2')
+
+sp_high_cov_sites = coverage_sp %>%
+    filter(coverage >= 0.8) %>%
+    pull(sitecode)
+sp_high_cov_bool = sp_site$sitecode %in% sp_high_cov_sites
+
+fnet_high_cov_sites = coverage_fnet %>%
+    filter(coverage >= 0.8) %>%
+    pull(sitecode)
+fnet_high_cov_bool = fnet_site$sitecode %in% fnet_high_cov_sites
+```
+
+# Figure 1: GPP-ER biplot and dist plots
+
+See code/paper for details
+
+```{r fig 1, include = FALSE}
+axis_cex = 2.4 #applies to labels and tick values
+
+jpeg(width=10, height=10, units='in', res=300, quality=100, type='cairo',
+     filename=here('figures', 'gpp_er_biplot_cumulAnnual.jpeg'))
+# par(mar=c(4.5, 4.5, 2, 2))
+par(mar=c(6.5, 6.5, 2, 2))
+
+log_gpp_fnet = log(fnet_site$GPP_site_mean)
+log_er_fnet = log(fnet_site$ER_site_mean * -1) * -1
+log_gpp_sp = log(sp_site$GPP_site_mean)
+log_er_sp = log(sp_site$ER_site_mean * -1) * -1
+
+gpptck = c(1:9 %o% 10^(0:3))
+ertck = rev(c(1:9 %o% 10^(0:3)))
+
+# plot(log_gpp_fnet,
+#      log_er_fnet, col=alpha(fnetcolor, alpha=0.5),
+plot(log_gpp_fnet[fnet_high_cov_bool],
+     log_er_fnet[fnet_high_cov_bool], col=alpha(fnetcolor, alpha=0.5),
+     xlab='', ylab='', bg=alpha(fnetcolor, alpha=0.5),
+     cex=1.5, cex.lab=axis_cex, cex.axis=axis_cex, ylim=-log(c(5000, 5)),
+     pch=21, yaxt='n', xaxt='n', xlim=log(c(20, 5000)), lwd=2)
+mtext(expression(paste("Annual GPP (g C"~"m"^"-2"*" y"^"-1"*')')),
+      1, line=5, cex=axis_cex)
+mtext(expression(paste("Annual ER (g C"~"m"^"-2"*" y"^"-1"*')')),
+      2, line=3.5, cex=axis_cex)
+# points(log_gpp_sp, log_er_sp, lwd=2,
+#        col=alpha(spcolor, alpha=0.5), cex=1.5, pch=21, bg=alpha(spcolor, alpha=0.5))
+points(log_gpp_sp[! sp_high_cov_bool], log_er_sp[! sp_high_cov_bool], lwd=2,
+       col=alpha(spcolor, alpha=0.5), cex=1.5, pch=21, bg='transparent')
+points(log_gpp_fnet[! fnet_high_cov_bool], log_er_fnet[! fnet_high_cov_bool],
+       col=alpha(fnetcolor, alpha=0.5), cex=1.5, pch=21, bg='transparent', lwd=2)
+points(log_gpp_sp[sp_high_cov_bool], log_er_sp[sp_high_cov_bool], lwd=2,
+       col=alpha(spcolor, alpha=0.5), cex=1.5, pch=21, bg=alpha(spcolor, alpha=0.5))
+legend('topright', legend=c('FLUXNET', 'StreamPULSE'), pch=21, bty='n', pt.cex=1.5,
+       col=c(alpha(fnetcolor, alpha=0.5), alpha(spcolor, alpha=0.5)), pt.lwd=2,
+       pt.bg=c(alpha(fnetcolor, alpha=0.5), alpha(spcolor, alpha=0.5)), x.intersp=2)
+legend('topright', legend=c('FLUXNET', 'StreamPULSE'), pch=21, bty='n', pt.cex=1.5,
+       col=c(alpha(fnetcolor, alpha=0.5), alpha(spcolor, alpha=0.5)),
+       pt.bg='transparent', pt.lwd=2)
+all_gpp = c(fnet_site$GPP_site_mean, sp_site$GPP_site_mean)
+all_gpp[all_gpp <= 0] = NA
+gpprng = range(all_gpp, na.rm=TRUE)
+all_er = c(fnet_site$ER_site_mean, sp_site$ER_site_mean)
+all_er[all_er >= 0] = NA
+errng = range(all_er, na.rm=TRUE)
+
+gpptck_log = log(gpptck)
+axis(1, at=gpptck_log, labels=rep('', length(gpptck_log)), cex.axis=axis_cex, padj=0.4, tcl=-0.4)
+axis(1, at=log(c(20, 100, 1000, 5000)), labels=c(20, 100, 1000, 5000),
+     cex.axis=axis_cex, padj=0.4, lwd.ticks=2, tcl=-.6)
+ertck_log = log(ertck) * -1
+axis(2, at=ertck_log, labels=rep('', length(ertck_log)), cex.axis=axis_cex, padj=0.4, tcl=-0.4)
+axis(2, at=log(c(5000, 1000, 100, 10, 1)) * -1, labels=c(5000, 1000, 100, 10, 1) * -1,
+     cex.axis=axis_cex, padj=0.2, lwd.ticks=2, tcl=-.6)
+
+abline(a=0, b=-1, lty=2)
+
+dev.off()
+
+#--- distplots
+
+jpeg(width=8, height=8, units='in', res=300, quality=100, type='cairo',
+     filename=here('figures', 'gpp_er_distplots.jpeg'))
+
+par(mfrow=c(2, 1), mar=c(2,1,1,1), oma=c(0, 0, 0, 0))
+
+#GPP
+dens = density(na.omit(log_gpp_fnet))
+# dens = density(na.omit(log_gpp_fnet[fnet_high_cov_bool]))
+gpp_dens_fnet = tibble(x=dens$x, y=dens$y)
+dens = density(na.omit(log_gpp_sp))
+# dens = density(na.omit(log_gpp_sp[sp_high_cov_bool]))
+gpp_dens_sp = tibble(x=dens$x, y=dens$y)
+
+plot(gpp_dens_fnet$x, gpp_dens_fnet$y, type='n', ann=FALSE, xaxt='n', yaxt='n',
+     bty='n', xlim=c(-2,9.5))
+axis(1, at=gpptck_log, labels=gpptck, padj=-1.3, tick = TRUE, line=-0.2, tcl=-0.2)
+mtext('GPP', 1, line=1)
+polygon(x=c(gpp_dens_fnet$x, rev(gpp_dens_fnet$x)),
+        y=c(gpp_dens_fnet$y, rep(0, nrow(gpp_dens_fnet))),
+        col=alpha(fnetcolor, alpha=0.7),
+        border=alpha(fnetcolor, alpha=0.7))
+polygon(x=c(gpp_dens_sp$x, rev(gpp_dens_sp$x)),
+        y=c(gpp_dens_sp$y, rep(0, nrow(gpp_dens_sp))),
+        col=alpha(spcolor, alpha=0.7),
+        border=alpha(spcolor, alpha=0.7))
+
+#ER
+dens = density(na.omit(log_er_fnet))
+# dens = density(na.omit(log_er_fnet[fnet_high_cov_bool]))
+er_dens_fnet = tibble(x=dens$x, y=dens$y)
+dens = density(na.omit(log_er_sp))
+# dens = density(na.omit(log_er_sp[sp_high_cov_bool]))
+er_dens_sp = tibble(x=dens$x, y=dens$y)
+
+plot(er_dens_fnet$x, er_dens_fnet$y, type='n', ann=FALSE, xaxt='n', yaxt='n',
+     bty='n', xlim=c(2, -9.5))
+axis(1, at=ertck_log, labels=ertck, padj=-1.3, tick = TRUE, line=-0.2, tcl=-0.2)
+mtext('ER', 1, line=1)
+polygon(x=c(rev(er_dens_fnet$x), er_dens_fnet$x),
+        y=c(rev(er_dens_fnet$y), rep(0, nrow(er_dens_fnet))),
+        col=alpha(fnetcolor, alpha=0.7),
+        border=alpha(fnetcolor, alpha=0.7))
+polygon(x=c(er_dens_sp$x, rev(er_dens_sp$x)),
+        y=c(rev(er_dens_sp$y), rep(0, nrow(er_dens_sp))),
+        col=alpha(spcolor, alpha=0.7),
+        border=alpha(spcolor, alpha=0.7))
+
+dev.off()
+
+#NEP
+nep_fnet = fnet_site$NEP_site_mean
+nep_sp = sp_site$NEP_site_mean
+
+jpeg(width=8, height=8, units='in', res=300, quality=100, type='cairo',
+     filename=here('figures', 'nep_distplot.jpeg'))
+
+par(mfrow=c(2, 1), mar=c(2,1,1,1), oma=c(0, 0, 0, 0))
+
+dens = density(na.omit(nep_fnet))
+# dens = density(na.omit(nep_fnet[fnet_high_cov_bool]))
+nep_dens_fnet = tibble(x=dens$x, y=dens$y)
+dens = density(na.omit(nep_sp))
+# dens = density(na.omit(nep_sp[sp_high_cov_bool]))
+nep_dens_sp = tibble(x=dens$x, y=dens$y)
+
+plot(nep_dens_sp$x, nep_dens_sp$y, type='n', ann=FALSE, xaxt='n', yaxt='n',
+     bty='n', xlim=c(-1723, 2116))
+axis(1, padj=-1.3, tick = TRUE, line=-0.2, tcl=-0.2)
+mtext('NEP', 1, line=1)
+polygon(x=c(rev(nep_dens_fnet$x), nep_dens_fnet$x),
+        y=c(rev(nep_dens_fnet$y), rep(0, nrow(nep_dens_fnet))),
+        col=alpha(fnetcolor, alpha=0.7),
+        border=alpha(fnetcolor, alpha=0.7))
+polygon(x=c(nep_dens_sp$x, rev(nep_dens_sp$x)),
+        y=c(rev(nep_dens_sp$y), rep(0, nrow(nep_dens_sp))),
+        col=alpha(spcolor, alpha=0.7),
+        border=alpha(spcolor, alpha=0.7))
+
+dev.off()
+```
+
+# Figures 2 and 3: lips plots and probability densities
+
+See code/paper for details
+
+```{r Figs 2 and 3, include = FALSE}
+dir.create(here('figures' ,'lips'), showWarnings = FALSE)
+dir.create(here('figures', 'lips', 'lips_cross'), showWarnings = FALSE)
+dir.create(here('figures', 'probdens'), showWarnings = FALSE)
+
+axis_cex = 2.4 #applies to labels and tick values
+
+lips_plot = function(quant_filt=NULL, outfile, use_fnet=FALSE, ylims=NULL,
+                     wee=FALSE){
+
+    dset = if(use_fnet) fnet_lips else sp_lips
+    dset_site = if(use_fnet) fnet_site else sp_site
+
+    var_quant_filt = NULL
+    if(! is.null(quant_filt)){
+        
+        filter_expr <- c()
+        for(i in seq_along(quant_filt)){
+
+            quant_comp = strsplit(quant_filt[i], ' ')[[1]]
+            qf = quantile(dset_site[, quant_comp[1], drop=TRUE], na.rm=TRUE,
+                          probs = as.numeric(quant_comp[3]))
+
+            filter_expr = c(filter_expr,
+                            paste(quant_comp[1], quant_comp[2], qf))
+        }
+
+        if(length(filter_expr) > 1){
+            filter_expr = paste(filter_expr, collapse = ' & ')
+        }
+
+        filt_sites = dset_site %>%
+            filter_(filter_expr) %>%
+            pull(sitecode)
+        dset = filter(dset, sitecode %in% filt_sites)
+    }
+
+    nsites_included = length(unique(dset$sitecode))
+
+    smry = dset %>%
+        select(DOY, GPP_C_filled, ER_C_filled, NEP_C_filled) %>%
+        group_by(DOY) %>%
+        summarize_all(list(median=~median(., na.rm=TRUE),
+                           quant25=~quantile(., na.rm=TRUE)[2],
+                           quant75=~quantile(., na.rm=TRUE)[4])) %>%
+        ungroup()
+
+    jpeg(width=11, height=11, units='in', filename=outfile, type='cairo',
+         res=300, quality=100)
+    # pdf(file=outfile, width=10, height=10)
+
+    if(! is.null(ylims)){
+
+        # plot_dims = top_dims = dev.size('in')
+        # top_dims[2] = plot_dims[2] * abs(ylims[2]) / sum(abs(ylims))
+
+        gpplim = c(0, ylims[2])
+        erlim = c(ylims[1], 0)
+
+    } else {
+
+        # top_dims = dev.size('in')
+
+        gpplim=c(0, 5)
+        erlim=c(-5, 0)
+
+        if(use_fnet){
+            gpplim[2] = 11
+            erlim[1] = -7
+        }
+    }
+
+    if(wee){
+        axis_cex_ = axis_cex * 2
+        line_ = -1.5
+        par(mfrow=c(2, 1), oma=c(1, 1, 0, 0), mar=c(0, 5, 3, 1), lend=2)
+    } else {
+        axis_cex_ = axis_cex
+        line_ = -2
+        par(mfrow=c(2, 1), oma=c(1, 1, 0, 0), mar=c(0, 5, 3, 1), lend=2)
+    }
+    # fin=top_dims, new=TRUE)
+
+    plot(smry$DOY, smry$GPP_C_filled_median, ylab='', yaxs='i', type='l',
+         bty='n', lwd=4, xlab='', ylim=gpplim, xaxs='i', xaxt='n', yaxt='n',
+         col='gray30')
+    polygon(x=c(smry$DOY, rev(smry$DOY)),
+            y=c(smry$GPP_C_filled_quant25, rev(smry$GPP_C_filled_quant75)),
+            border=NA, col=alpha('forestgreen', alpha=0.6))
+    axislocs = if(max(ylims) >= 10) seq(0, 10, 2) else c(0, 2, 4)
+    axis(2, las=0, line=0, xpd=NA, tck=-.02, labels=FALSE,
+         at=axislocs, cex.axis=axis_cex_, tcl=-0.3)
+    # at=round(seq(0, gpplim[2], length.out=5), 1))
+    axis(2, las=0, line=-0.5, xpd=NA, tcl=0, col='transparent',
+         at=axislocs, cex.axis=axis_cex_)
+    # at=round(seq(0, gpplim[2], length.out=5), 1))
+    abline(h=0, lty=2, lwd=2, col='gray60')
+    medsums = round(colSums(select(smry, contains('median'))), 1)
+
+    if(! wee){
+        mtext(expression(paste(bold("g C") ~ bold("m") ^ bold("-2") *
+                                   bold(" d") ^ bold("-1"))), side=2,
+              line=line_, outer=TRUE, cex=axis_cex_)
+    }
+
+    # if(filter_label){
+    #     legend('topright', title='Filters', bty='n', title.col='gray30',
+    #            lty=1, seg.len=0.2, lwd=2, legend=c(..., var_quant_filt))
+    # }
+
+    legend('right', title='Cumulative\nMedian Sums', bty='n',
+           legend=c(paste('GPP:', medsums[1]), paste('ER:', medsums[2]),
+                    paste('NEP:', medsums[3])), title.col='gray30')
+    legend('left', paste('Sites included:', nsites_included), bty='n')
+
+    # if(! is.null(ylims)){
+    #     plot_dims = bottom_dims = dev.size('in')
+    #     bottom_dims[2] = plot_dims[2] * abs(ylims[1]) / sum(abs(ylims))
+    # } else {
+    #     bottom_dims = dev.size('in')
+    # }
+
+    par(mar=c(4, 5, 0, 1))#, fin=bottom_dims)
+    if(wee){
+        padj_ = 0.8
+        DOY1 = ''
+    } else {
+        padj_ = 0.5
+        DOY1 = 1
+    }
+
+    plot(smry$DOY, smry$ER_C_filled_median, ylab='', yaxs='i', type='l',
+         bty='n', lwd=4, xlab='', ylim=erlim, xaxs='i', xaxt='n', yaxt='n')
+    polygon(x=c(smry$DOY, rev(smry$DOY)),
+            y=c(smry$ER_C_filled_quant25, rev(smry$ER_C_filled_quant75)),
+            border=NA, col=alpha('sienna', alpha=0.6))
+    if(max(ylims) >= 10){
+        axislocs = seq(0, -10, -2)
+        axisextra = -11
+    } else {
+        axislocs = c(0, -2, -4)
+        axisextra = NULL
+    }
+    axis(2, las=0, line=0, xpd=NA, tck=-.02, labels=FALSE,
+         # at=round(seq(0, erlim[1], length.out=5), 1))
+         at=c(axislocs, axisextra), cex.axis=axis_cex_, tcl=-0.3)
+    axis(2, las=0, line=-0.5, xpd=NA, tcl=0, col='transparent',
+         # at=round(seq(0, erlim[1], length.out=5), 1))
+         at=axislocs, cex.axis=axis_cex_)
+    axis(1, line=0, tck=-.02, labels=FALSE, at=c(1, seq(60, max(smry$DOY), 60)),
+         cex.axis=axis_cex_, tcl=-0.3)
+    axis(1, line=-0.5, tcl=0, col='transparent', at=c(1, seq(60, max(smry$DOY), 60)),
+         cex.axis=axis_cex_, padj = padj_, tcl=-0.3,
+         labels = c(DOY1, seq(60, max(smry$DOY), 60)))
+    lines(smry$DOY, smry$NEP_C_filled_median, col='black', lwd=4, xpd=NA, lend=1)
+
+    if(! wee){
+        mtext('DOY', side=1, line=3.5, font=2, cex=axis_cex_)
+    }
+    dev.off()
+}
+
+pdf_plot = function(var, outfile){
+
+    jpeg(width=7, height=4, units='in', filename=outfile, type='cairo',
+         res=300, quality=100)
+    # pdf(outfile, height=4, width=7)
+
+    vv = na.omit(sort(sp_site[[var]]))
+    dens = density(vv)
+    vq = quantile(vv, probs=c(0.25, 0.75))
+    densdf = tibble(x=dens$x, y=dens$y)
+    dens25 = dens75 = densdf
+    dens25 = dens25[densdf$x <= vq[1], ]
+    dens75 = dens75[densdf$x >= vq[2], ]
+    plot(densdf$x, densdf$y, type='l', xlab='width', ylab='density', bty='l',
+         col='gray50', lwd=2)
+    polygon(x=c(dens25$x, rev(dens25$x)),
+            y=c(dens25$y, rep(0, nrow(dens25))), col='gray50', border='gray50')
+    polygon(x=c(dens75$x, rev(dens75$x)),
+            y=c(dens75$y, rep(0, nrow(dens75))), col='gray50', border='gray50')
+
+    dev.off()
+}
+
+#overall
+lips_ylim = c(-11, 11)
+lips_plot(quant_filt=NULL, outfile=here('figures', 'lips', 'lips_overall_sp.jpeg'),
+          ylims=lips_ylim)
+lips_plot(quant_filt=NULL, outfile=here('figures', 'lips', 'lips_overall_fnet.jpeg'),
+          use_fnet=TRUE, ylims=lips_ylim)
+
+pdf_plot('Disch_ar1', here('figures', 'probdens', 'probdens_Qar1.jpeg'))
+pdf_plot('MOD_ann_NPP', here('figures', 'probdens', 'probdens_MODIS.jpeg'))
+pdf_plot('Stream_PAR_sum', here('figures', 'probdens', 'probdens_PAR.jpeg'))
+
+#subsets
+lips_ylim = c(-5, 5)
+lips_plot(quant_filt='Disch_skew > 0.75', outfile=here('figures', 'lips', 'lips_Qskew_75.jpeg'),
+          ylims=lips_ylim, wee=TRUE)
+lips_plot(quant_filt='Disch_skew < 0.25', outfile=here('figures', 'lips', 'lips_Qskew_25.jpeg'),
+          ylims=lips_ylim, wee=TRUE)
+lips_plot(quant_filt='MOD_ann_NPP > 0.75', outfile=here('figures', 'lips', 'lips_MODIS_75.jpeg'),
+          ylims=lips_ylim, wee=TRUE)
+lips_plot(quant_filt='MOD_ann_NPP < 0.25', outfile=here('figures', 'lips', 'lips_MODIS_25.jpeg'),
+          ylims=lips_ylim, wee=TRUE)
+lips_plot(quant_filt='Stream_PAR_sum > 0.75', outfile=here('figures', 'lips', 'lips_PAR_75.jpeg'),
+          ylims=lips_ylim, wee=TRUE)
+lips_plot(quant_filt='Stream_PAR_sum < 0.25', outfile=here('figures', 'lips', 'lips_PAR_25.jpeg'),
+          ylims=lips_ylim, wee=TRUE)
+
+#cross-subsets
+lips_plot(quant_filt = c('Stream_PAR_sum < 0.25', 'Disch_skew < 0.25'),
+          outfile = 'figures/lips/lips_cross/lips_PAR25-Qskew25.jpeg',
+          ylims = lips_ylim,
+          wee = TRUE)
+lips_plot(quant_filt = c('Stream_PAR_sum < 0.25', 'Disch_skew > 0.75'),
+          outfile = 'figures/lips/lips_cross/lips_PAR25-Qskew75.jpeg',
+          ylims = lips_ylim,
+          wee = TRUE)
+lips_plot(quant_filt = c('Stream_PAR_sum > 0.75', 'Disch_skew > 0.75'),
+          outfile = 'figures/lips/lips_cross/lips_PAR75-Qskew75.jpeg',
+          ylims = lips_ylim,
+          wee = TRUE)
+lips_plot(quant_filt = c('Stream_PAR_sum > 0.75', 'Disch_skew < 0.25'),
+          outfile = 'figures/lips/lips_cross/lips_PAR75-Qskew25.jpeg',
+          ylims = c(-5, 5.6),
+          wee = TRUE)
+```
+
+# Figure 4: bubble plots
+
+See code/paper for details
+
+```{r fig 4, include = FALSE}
+dir.create(here('figures', 'bubble_plots'), showWarnings = FALSE)
+
+bubble_plot = function(xvar, comp, logx=FALSE, outfile){
+
+    jpeg(width=8, height=8, units='in', filename=outfile, type='cairo',
+         res=300, quality=100)
+    # pdf(outfile, height=8, width=8)
+    par(mar=c(5, 5, 4, 6))
+
+    plotcol = case_when(comp == 'GPP_site_mean' ~ gppcolor,
+                        comp == 'ER_site_mean' ~ ercolor,
+                        comp == 'NEP_site_mean' ~ 'black')
+
+    if(xvar == 'Stream_PAR_sum'){
+        xxlab = 'Light Availability (Mean Annual Surface PAR)'
+    } else {
+        xxlab = 'MODIS NPP'
+    }
+
+    gpprng = range(sp_site$GPP_site_mean, na.rm=TRUE)
+    if(comp == 'ER_site_mean'){
+        xx = abs(sp_site[[comp]])
+    } else {
+        xx = sp_site[[comp]]
+    }
+    if(comp != 'NEP_site_mean'){
+        rescaled = ((xx - gpprng[1]) /
+                        (gpprng[2] - gpprng[1])) * (5 - 1) + 1
+    } else {
+        xxrng = range(xx, na.rm=TRUE)
+        # rescaled = ((xx - xxrng[1]) /
+        #                 (xxrng[2] - xxrng[1])) * (3) + 0.2
+        rescaled = ((xx - -2000) /
+                        (1000 - -2000)) * (4) + 0.5
+    }
+
+    xxvar = sp_site[[xvar]]
+    if(logx){
+        xxvar = log(xxvar)
+        if(xvar == 'Stream_PAR_sum'){
+            xlm = c(.5, 2.8)
+        } else {
+            xlm = c(3.95, 7.2)
+        }
+    } else {
+        if(xvar == 'Stream_PAR_sum'){
+            xlm = c(2, 15.5)
+        } else {
+            xlm = range(xxvar, na.rm=TRUE)
+        }
+    }
+
+    plot(xxvar,
+         sp_site$Disch_ar1, pch=21,
+    # plot(xxvar[sp_high_cov_bool],
+    #      sp_site$Disch_ar1[sp_high_cov_bool], pch=21,
+         xlab=xxlab, xaxt='n',
+         ylab='Predictability of Flow (Discharge AR-1 Coeff.)',
+         col=alpha(plotcol, alpha=0.5), bty='o',
+         ylim=c(0.1, 1), xlim=xlm,
+         xpd=NA, main='', cex=rescaled, font.lab=2,
+         # xpd=NA, main='', cex=rescaled[sp_high_cov_bool], font.lab=2,
+         bg=alpha(plotcol, alpha=0.5))
+    # points(xxvar[! sp_high_cov_bool],
+    #        sp_site$Disch_ar1[! sp_high_cov_bool], pch=21,
+    #        col=alpha(plotcol, alpha=0.5), bg='transparent',
+    #        cex=rescaled[! sp_high_cov_bool])
+
+    if(comp != 'NEP_site_mean'){
+        legend('right', legend=c(expression(paste(0.01)), '', '',
+                                 expression(paste(4000))),
+               bty='n', pch=21, pt.bg='transparent', x.intersp=1.7,
+               pt.cex=c(1, 2, 3, 5), col='gray30', xpd=NA,
+               y.intersp=c(1, 2, 1.2, 1.6),
+               inset=c(-0.16, 0), title='')
+    } else {
+        legend('right', legend=c(expression(paste(-2000)), '', '',
+                                 expression(paste(1000))),
+               bty='n', pch=21, pt.bg='transparent', x.intersp=1.7,
+               pt.cex=seq(0.5, 4, length.out=4), col='gray30', xpd=NA,
+               y.intersp=c(1, 2, 1.2, 1.6),
+               inset=c(-0.18, 0), title='')
+    }
+    if(comp == 'GPP_site_mean'){
+        legend('right', legend=c('','','',''),
+               bty='n', pch=21, pt.bg='transparent', x.intersp=1.5,
+               pt.cex=c(1, 2, 3, 5), col='transparent', xpd=NA,
+               inset=c(-0.15, 0),
+               title=expression(paste(bold('Cumul.\nAnnual\nGPP'))))
+    } else if(comp == 'ER_site_mean'){
+        legend('right', legend=c('','','',''),
+               bty='n', pch=21, pt.bg='transparent', x.intersp=1.5,
+               pt.cex=c(1, 2, 3, 5), col='transparent', xpd=NA,
+               inset=c(-0.15, 0),
+               title=expression(paste(bold('Cumul.\nAnnual\nER'))))
+    } else {
+        legend('right', legend=c('','','',''),
+               bty='n', pch=21, pt.bg='transparent', x.intersp=1.5,
+               pt.cex=c(1, 2, 3, 5), col='transparent', xpd=NA,
+               inset=c(-0.15, 0),
+               title=expression(paste(bold('Cumul.\nAnnual\nNEP'))))
+    }
+
+    if(logx){
+        if(xvar == 'Stream_PAR_sum'){
+            tcks = c(1, 2, 4, 8, 16)
+        } else {
+            tcks = c(200, 400, 800, 1600, 3200)
+        }
+        tcks_log = log(tcks)
+        axis(1, at=tcks_log, labels=tcks)
+    } else {
+        axis(1)
+    }
+
+    dev.off()
+}
+
+bubble_plot(xvar='Stream_PAR_sum', comp='GPP_site_mean', logx=FALSE,
+            outfile=here('figures', 'bubble_plots', 'PAR_GPP_linear.jpeg'))
+bubble_plot(xvar='Stream_PAR_sum', comp='GPP_site_mean', logx=TRUE,
+            outfile=here('figures', 'bubble_plots', 'PAR_GPP_log.jpeg'))
+bubble_plot(xvar='Stream_PAR_sum', comp='ER_site_mean', logx=FALSE,
+            outfile=here('figures', 'bubble_plots', 'PAR_ER_linear.jpeg'))
+bubble_plot(xvar='Stream_PAR_sum', comp='ER_site_mean', logx=TRUE,
+            outfile=here('figures', 'bubble_plots', 'PAR_ER_log.jpeg'))
+bubble_plot(xvar='Stream_PAR_sum', comp='NEP_site_mean', logx=FALSE,
+            outfile=here('figures', 'bubble_plots', 'PAR_NEP_linear.jpeg'))
+bubble_plot(xvar='Stream_PAR_sum', comp='NEP_site_mean', logx=TRUE,
+            outfile=here('figures', 'bubble_plots', 'PAR_NEP_log.jpeg'))
+bubble_plot(xvar='MOD_ann_NPP', comp='GPP_site_mean', logx=FALSE,
+            outfile=here('figures', 'bubble_plots', 'MODNPP_GPP_linear.jpeg'))
+bubble_plot(xvar='MOD_ann_NPP', comp='GPP_site_mean', logx=TRUE,
+            outfile=here('figures', 'bubble_plots', 'MODNPP_GPP_log.jpeg'))
+bubble_plot(xvar='MOD_ann_NPP', comp='ER_site_mean', logx=FALSE,
+            outfile=here('figures', 'bubble_plots', 'MODNPP_ER_linear.jpeg'))
+bubble_plot(xvar='MOD_ann_NPP', comp='ER_site_mean', logx=TRUE,
+            outfile=here('figures', 'bubble_plots', 'MODNPP_ER_log.jpeg'))
+bubble_plot(xvar='MOD_ann_NPP', comp='NEP_site_mean', logx=FALSE,
+            outfile=here('figures', 'bubble_plots', 'MODNPP_NEP_linear.jpeg'))
+bubble_plot(xvar='MOD_ann_NPP', comp='NEP_site_mean', logx=TRUE,
+            outfile=here('figures', 'bubble_plots', 'MODNPP_NEP_log.jpeg'))
+```
+
+# Figure S1: sitemap
+
+See code/paper for details
+
+```{r Figure S1, eval = FALSE, include = FALSE}
+
+library(sf)
+library(tmap)
+library(tmaptools)
+library(OpenStreetMap) #requires rJava package (which requires local JRE, JDK installation)
+
+sites_fnet = readRDS(here('output_data', 'fluxnet_site_info_filtered.rds')) %>%
+    as_tibble() %>%
+    select(site_code = Site_ID, Lat, Lon) %>%
+    mutate(source = 'FLUXNET') %>%
+    filter(! is.na(Lon)) %>%
+    st_as_sf(coords = c('Lon', 'Lat'),
+             remove = FALSE,
+             crs = 4326)
+    
+sites_sp = readRDS(here('output_data', 'lotic_site_info_filtered.rds')) %>%
+    as_tibble() %>%
+    select(site_code = Site_ID, Lat, Lon) %>%
+    mutate(source = 'StreamPULSE') %>%
+    st_as_sf(coords = c('Lon', 'Lat'),
+             remove = FALSE,
+             crs = 4326)
+
+basemap = tmaptools::read_osm(sites_fnet,
+                              # ext = 1.1,
+                              relative = TRUE,
+                              ylim = c(-0.04, 1.01),
+                              xlim = c(-0.04, 1.02),
+                              type = 'nps')
+
+tmap_mode('plot')
+
+map = tm_shape(basemap) + tm_rgb() +
+    tm_shape(sites_sp) + tm_symbols(shape = 21, col = 'steelblue3', size = 0.1,
+                                    border.lwd = 0.5, border.col = 'black') +
+    tm_shape(sites_fnet) + tm_symbols(shape = 21, col = fnetcolor, size = 0.1,
+                                      border.lwd = 0.5, border.col = 'black') +
+    # tm_compass(type = 'arrow', position = c(0.1, 0.01), show.labels = 1,
+    #            size = 2, text.size = 1) +
+    # tm_style(style='white') +
+    # tm_layout(frame=TRUE, bg.color='white') +
+    tm_scale_bar(text.size = 0.6, position=c(0, 0), width = 0.2) +
+    tm_add_legend(type = 'symbol', labels = 'StreamPULSE', col = 'steelblue3',
+                  shape = 21, border.col = 'black', border.lwd = 1) +
+    tm_add_legend(type = 'symbol', labels = 'FLUXNET', col = fnetcolor,
+                  shape = 21, border.col = 'black', border.lwd = 1) +
+    tm_legend(show = TRUE, position = c(0.005, 0.09), outside = FALSE,
+              bg.color = 'gray94', frame = TRUE, text.size = 0.6,
+              between.margin = 0)
+
+tmap_save(map, filename = here('figures', 'sitemap.jpg'), bg = 'white',
+          dpi = 800, width = 6, units = 'in')
+          # compression = 'lzw',
+```
+
+# Figure S2: peak months
+
+See code/paper for details
+
+```{r Figure Y, include = FALSE}
+dir.create(here('figures', 'peak_months'), showWarnings = FALSE)
+
+library(lubridate)
+
+error.bars <- function(x, y, upper, lower=upper, cap.length=0.1, horiz=F,...){
+    if(length(x) != length(y) | length(y) !=length(lower) | length(lower) != length(upper))
+        stop("One or more vectors is not the same length")
+
+    if(horiz==F) {
+        arrows(x,y+upper, x, y-lower, angle=90, code=3, length=cap.length, ...)
+    } else if (horiz==T) {
+        arrows(x+upper,y, x-lower, y, angle=90, code=3, length=cap.length, ...)
+    }
+}
+
+sitemonths_sp = sp_full %>%
+    rename(GPP = GPP_C_filled,
+           ER = ER_C_filled) %>%
+    mutate(month = month(Date)) %>%
+    group_by(sitecode, Year, month) %>%
+    summarize(across(c(GPP, ER), mean, na.rm = TRUE),
+              .groups = 'drop') %>%
+    group_by(sitecode, month) %>%
+    summarize(across(c(GPP, ER), #mean, na.rm = TRUE),
+                     list(mean = ~mean(., na.rm = TRUE),
+                          sd = ~sd(., na.rm = TRUE))),
+              n = n(),
+              .groups = 'drop')
+
+sitemonths_fnet = fnet_full %>%
+    mutate(month = month(Date)) %>%
+    group_by(sitecode, Year, month) %>%
+    summarize(across(c(GPP, ER), mean, na.rm = TRUE),
+              .groups = 'drop') %>%
+    group_by(sitecode, month) %>%
+    summarize(across(c(GPP, ER), #mean, na.rm = TRUE),
+                     list(mean = ~mean(., na.rm = TRUE),
+                          sd = ~sd(., na.rm = TRUE))),
+              n = n(),
+              .groups = 'drop')
+
+#GPP
+
+maxmonths_etc_sp_gpp = sitemonths_sp %>%
+    group_by(sitecode) %>%
+    filter(GPP_mean == max(GPP_mean),
+           n == max(n)) %>%
+    summarize(GPP_mean = first(GPP_mean),
+              GPP_sd = first(GPP_sd),
+              n = first(n),
+              month = first(month),
+              .groups = 'drop') %>%
+    mutate(SE = GPP_sd / sqrt(n))
+
+maxmonths_etc_fnet_gpp = sitemonths_fnet %>%
+    group_by(sitecode) %>%
+    filter(GPP_mean == max(GPP_mean),
+           n == max(n)) %>%
+    summarize(GPP_mean = first(GPP_mean),
+              GPP_sd = first(GPP_sd),
+              n = first(n),
+              month = first(month),
+              .groups = 'drop') %>%
+    mutate(SE = GPP_sd / sqrt(n))
+
+maxmonths_sp_gpp = c('1' = 0, table(maxmonths_etc_sp_gpp$month), '12' = 0)
+maxmonths_fnet_gpp = table(maxmonths_etc_fnet_gpp$month)
+maxmonths_gpp = matrix(c(maxmonths_fnet_gpp, maxmonths_sp_gpp),
+                   nrow = 2, byrow = TRUE,
+                   dimnames = list(c('FLUXNET', 'StreamPULSE'),
+                                   month.abb))
+
+jpeg(width=8, height=8, units='in', res=300, quality=100, type='cairo',
+     filename=here('figures', 'peak_months/GPP.jpg'))
+
+barplot(maxmonths_gpp, border = NA, beside = TRUE,
+        col = c(fnetcolor, spcolor),
+        ylab = 'n', main = 'Highest GPP months')
+legend(x=25, y=60, legend=c('FLUXNET', 'StreamPULSE'),
+       fill = c(fnetcolor, spcolor), bty = 'n', border = NA)
+text(x=25, y=52, adj = 0, paste('n FLUXNET =', sum(maxmonths_fnet_gpp)))
+text(x=25, y=49, adj = 0, paste('n StreamPULSE =', sum(maxmonths_sp_gpp)))
+
+dev.off()
+
+#ER
+
+maxmonths_etc_sp_er = sitemonths_sp %>%
+    group_by(sitecode) %>%
+    filter(ER_mean == min(ER_mean),
+           n == max(n)) %>%
+    summarize(ER_mean = first(ER_mean),
+              ER_sd = first(ER_sd),
+              n = first(n),
+              month = first(month),
+              .groups = 'drop') %>%
+    mutate(SE = ER_sd / sqrt(n))
+
+maxmonths_etc_fnet_er = sitemonths_fnet %>%
+    group_by(sitecode) %>%
+    filter(ER_mean == min(ER_mean),
+           n == max(n)) %>%
+    summarize(ER_mean = first(ER_mean),
+              ER_sd = first(ER_sd),
+              n = first(n),
+              month = first(month),
+              .groups = 'drop') %>%
+    mutate(SE = ER_sd / sqrt(n))
+
+maxmonths_sp_er = table(maxmonths_etc_sp_er$month)
+maxmonths_fnet_er = table(maxmonths_etc_fnet_er$month)
+# maxmonths_fnet_er = c(tt[1:9], c('10' = 0), tt[11:12])
+maxmonths_er = matrix(c(maxmonths_fnet_er, maxmonths_sp_er),
+                   nrow = 2, byrow = TRUE,
+                   dimnames = list(c('FLUXNET', 'StreamPULSE'),
+                                   month.abb))
+
+jpeg(width=8, height=8, units='in', res=300, quality=100, type='cairo',
+     filename=here('figures', 'peak_months/ER.jpg'))
+
+barplot(maxmonths_er, border = NA, beside = TRUE,
+        col = c(fnetcolor, spcolor),
+        ylab = 'n', main = 'Highest ER months')
+legend(x=25, y=55, legend=c('FLUXNET', 'StreamPULSE'),
+       fill = c(fnetcolor, spcolor), bty = 'n', border = NA)
+text(x=25, y=48, adj = 0, paste('n FLUXNET =', sum(maxmonths_fnet_er)))
+text(x=25, y=45, adj = 0, paste('n StreamPULSE =', sum(maxmonths_sp_er)))
+
+dev.off()
+
+```
