@@ -25,7 +25,8 @@ good_site_years <- diagnostic %>%
          n_days >= (365*0.6))
 
 # read-in streamlight data
-daily_light_metrics <- read_csv('data/output_data/daily_light_metrics.csv')
+
+light <- read_csv('data/usgs_streamlight/annual_light.csv')
 
 
 
