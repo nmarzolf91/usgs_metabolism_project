@@ -27,8 +27,13 @@ library(lubridate)
 
 # data were shared by Chris Solomon in a Onedrive folder
 # those data were downloaded as a zip file and moved to the directory here:
-d <- unzip('data/lake_gpp_solomon.zip',
+d <- unzip('data/Solomon et al. 2013/lake_gpp_solomon.zip',
            exdir = 'data/lake_gpp_solomon')
+
+# Ecosystem respiration (mg O2 L-1 d-1) are stored in these files
+daily_ER_files <- d %>% 
+  data.frame() %>% 
+  filter(grepl('optimOut.txt',.)) 
 
 # extract lake names
 names <- vector()
@@ -39,28 +44,27 @@ for(i in 1:length(daily_ER_files$.)){
   names[i] <- name
 }
 
-# Ecosystem respiration (mg O2 L-1 d-1) are stored in these files
-daily_ER_files <- d %>% 
-  data.frame() %>% 
-  filter(grepl('optimOut.txt',.)) %>% 
+daily_ER_files <- daily_ER_files %>% 
   mutate(names = names) %>% 
   rename(dir = '.')
+
 
 # processing 
 list_er <- as.list(c(daily_ER_files$dir))
 names(list_er) <- names
 
 # read in and append
-daily_ER <- list %>%
+daily_ER <- list_er %>%
   map_dfr(read_delim,
           .id = 'names')
 
 # read out ER data
 daily_ER_clean <- data.frame(daily_ER %>% 
-                               mutate(date = as_date(solarDay)) %>% 
-                               select(lake_name = names,
+                               mutate(date = lubridate::as_date(nll),
+                                      ER = round(-1*rhoEst, 3)) %>% 
+                               select(site = names,
                                       date,
-                                      ER = rhoEst)) 
+                                      ER)) 
 
 # get GPP data ----
 daily_GPP_files <- d %>% 
@@ -79,16 +83,19 @@ daily_GPP <- list_gpp %>%
 
 daily_GPP_clean <- daily_GPP %>% 
   mutate(date = lubridate::date(solarDay)) %>% 
-  select(lake_name = names,
+  select(site = names,
          date,
          GPP = GPPFit) 
 
-
-
 out <- full_join(daily_ER_clean, daily_GPP_clean,
-                 by = c('date', 'lake_name'))
+                 by = c('date', 'site'))
 
 write_csv(out,
-          'data/lake_gpp_solomon.csv')
+          'data/output_data/lake_gpp_solomon.csv')
 
+source('code/functions/fill_and_normalize_metab.R')
+lakes_fill_norm <- fill_and_normalize_metab(out)
+
+write_csv(lakes_fill_norm,
+          'data/output_data/lake_metab_fill_norm.csv')
 

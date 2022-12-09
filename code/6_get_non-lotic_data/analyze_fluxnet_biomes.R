@@ -25,7 +25,7 @@ analyze_fluxnet_biomes <- function() {
   
   
   # read fluxnet data (taken from Bernhardt et al. 2022: https://figshare.com/articles/dataset/CSV_data_for_Bernhardt_et_al_2022_PNAS_/19074275?backTo=/collections/Data_and_code_for_Bernhardt_et_al_2022_PNAS_/5812160)
-  fluxnet <- readRDS('data/metabolism_synthesis/output_data/fluxnet_filtered_metabolism.rds')
+  fluxnet <- readRDS('code/metabolism_synthesis/output_data/fluxnet_filtered_metabolism.rds')
   fluxnet_names <- names(fluxnet)
   
   # read in biomes for each site; did this by hand on 10/18/2022
@@ -45,7 +45,7 @@ analyze_fluxnet_biomes <- function() {
     left_join(fluxnet_biomes, 'Site_ID')
 
   # read in summary site data
-  fluxnet_site <- readRDS('data/metabolism_synthesis/output_data/fluxnet_site_info_filtered.rds') %>%
+  fluxnet_site <- readRDS('code/metabolism_synthesis/output_data/fluxnet_site_info_filtered.rds') %>%
     as_tibble() %>% 
     left_join(fluxnet_biomes, 'Site_ID')
   
@@ -61,7 +61,7 @@ analyze_fluxnet_biomes <- function() {
     arrange(sitecode)
   
   # site summary data and filter to coverage data
-  coverage_fluxnet <- readRDS('data/metabolism_synthesis/output_data/fluxnet_site_info_filtered.rds') %>%
+  coverage_fluxnet <- readRDS('code/metabolism_synthesis/output_data/fluxnet_site_info_filtered.rds') %>%
     as_tibble() %>%
     select(sitecode = Site_ID,
            nyears, ndays, coverage) %>%
@@ -83,10 +83,13 @@ analyze_fluxnet_biomes <- function() {
   fluxnet_annual_use <- fluxnet_site_met %>% 
     filter(sitecode %in% fluxnet_high_cov_sites)
   
+  write_csv(fluxnet_day_use %>% 
+              select(site = Site_ID,biome = IBGP_long,date = Date, year = Year, DOY, GPP, ER, Net, Temp, Precip, VPD, SW),
+            'data/output_data/fluxnet_daily_wBiome.csv')
   
   write_csv(fluxnet_annual_use %>% 
               filter(!is.na(biome)),
-            'data/fluxnet_annual_wBiome.csv')
+            'data/output_data/fluxnet_annual_wBiome.csv')
 } # end function
 
 
