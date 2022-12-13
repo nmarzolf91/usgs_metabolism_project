@@ -1,4 +1,9 @@
 calc_intrayear_metrics <- function(data = river_metab) {
+  
+  source('code/8_intraannual_variation/get_seasonality.R')
+  source('code/8_intraannual_variation/mag7_fun.R')
+  source('code/8_intraannual_variation/ar_fun.R')
+  
   sites <- unique(river_metab$site)
   years <- lubridate::year(river_metab$date) %>% 
     unique()

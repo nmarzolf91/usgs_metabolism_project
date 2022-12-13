@@ -169,7 +169,7 @@ river_metab_ann %>%
   geom_point(aes(group = site))+
   geom_line(aes(group = site))+
   #geom_smooth(method = 'lm', se = FALSE)+
-  labs(y = metab_units)+
+  labs(y = metab_units_area)+
   # scale_color_viridis_d(direction = -1)+
   facet_grid(sens_sig ~ sens_slope)
 
