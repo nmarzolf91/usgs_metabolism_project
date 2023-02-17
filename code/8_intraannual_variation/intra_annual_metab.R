@@ -13,6 +13,7 @@ library(tidyverse)
 library(dplyr)
 library(ggplot2)
 library(lubridate)
+library(gghighlight)
 ##
 ## clear the environment if needed
 rm(list = ls())
@@ -63,6 +64,8 @@ for(j in 3:9) {
 
 
 
+
+# significance plots ----
 river_intra_metrics_sigs <- river_intra_metrics_trend %>% 
   ungroup() %>% 
   mutate(sens_p = unlist(sens_p)) %>% 
@@ -81,7 +84,8 @@ river_ann_metrics_summary <- river_intra_metrics %>%
 write_csv(river_ann_metrics_summary,
           'data/output_data/river_ann_metrics_summary.csv')
 
-# plot magniticent 7 ----
+# plot magnificent 7 ----
+## by year ----
 river_ann_metrics_summary %>% 
   ggplot(.,
          aes(x = year, 
@@ -161,7 +165,33 @@ river_ann_metrics_summary %>%
   labs(y = 'AR(1) Coefficient')+
   facet_grid(sens_sig ~ sens_slope)
 
+## by site ----
+# by site plots ----
+river_ann_metrics_summary %>% names()
 
+ggplot(river_ann_metrics_summary,
+       aes(x = site, y = mean))+
+  geom_point()
+
+ggplot(river_ann_metrics_summary,
+       aes(x = site, y = CV))+
+  geom_point()
+
+ggplot(river_ann_metrics_summary,
+       aes(x = site, y = skewness))+
+  geom_point()
+
+ggplot(river_ann_metrics_summary,
+       aes(x = site, y = kurtosis))+
+  geom_point()
+
+ggplot(river_ann_metrics_summary,
+       aes(x = site, y = amplitude))+
+  geom_point()
+
+ggplot(river_ann_metrics_summary,
+       aes(x = site, y = phase))+
+  geom_point()
 
 # ----
 
@@ -171,7 +201,7 @@ river_metab_50iles <- river_metab %>%
   mutate(doy = lubridate::yday(date)) %>% 
   group_by(site, 
            year = lubridate::year(date)) %>% 
-  mutate(gpp_cdf = ecdf(GPP_filled)(GPP_filled)) %>% 
+  mutate(gpp_cdf = ecdf(GPP_filled)(GPP_filled)) %>% arrange(gpp_cdf) %>% 
   slice(which.min(abs(gpp_cdf - 0.5))) 
 
 doy_model <- river_metab_50iles %>% 
@@ -186,18 +216,20 @@ doy_model_pvals <- unnest(doy_model, anova) %>%
   filter(Df == 1) %>% 
   select(pval = `Pr(>F)`)
 
+doy_model_merged <- left_join(river_metab_50iles, 
+                              doy_model_pvals, 
+                              'site')
 
-ggplot(left_join(river_metab_50iles, 
-                 doy_model_pvals, 
-                 'site'),
-       aes(x = year, 
-           y = doy,
-           color = site))+
+ggplot(doy_model_merged,
+       aes(x = site, 
+           y = doy))+
   geom_point()+
-  geom_line()+
-  gghighlight(pval <= 0.05)+
-  labs(y = 'Julian Day of 50th-ile GPP')+
-  theme(legend.position = 'none')
+  #geom_line()+
+  #gghighlight(pval <= 0.05)+
+  labs(y = 'DOY of 50th-ile GPP')+
+  theme(legend.position = 'none',
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
 
 # When is the most productive week?
@@ -259,15 +291,48 @@ n_75_model_pvals <- unnest(n_75_model, anova) %>%
 
 ggplot(left_join(river_metab_75,
                  n_75_model_pvals,
-                 'site'),
-       aes(x = year, 
-           y = n_75_days,
-           color = site))+
+                 'site') %>% summary(),
+       aes(x = site, 
+           y = n_75_days))+
   geom_point()+
-  geom_line()+
+  #geom_line()+
   gghighlight(pval <= 0.05)+
   ylab('Number of Days >75th-ile Annual GPP')
 
 
+# trends in GPP variance
+annual_C_cv_trends <- river_metab_ann %>% 
+  dplyr::select(site, year, GPP_daily_cv) %>% 
+  dplyr::group_by(site) %>% 
+  tidyr::nest() %>% 
+  dplyr::mutate(sens = purrr::map(data, ~trend::sens.slope(x = .$GPP_daily_cv)),
+                mk_test = purrr::map(data, ~trend::mk.test(x = .$GPP_daily_cv))) %>% 
+  dplyr::mutate(sens_p = purrr::map(sens, ~.$p.value), 
+                sens_s = purrr::map_dbl(sens, ~.$estimates),
+                mk_p = purrr::map_dbl(mk_test, ~.$p.value),
+                mk_s = purrr::map_dbl(mk_test, ~.$estimates['S']),
+                sens_sig = ifelse(sens_p <= 0.05,'significant', 'non-significant'),
+                sens_slope = ifelse(sens_s > 0, 'increasing', 'decreasing'),
+                mk_sig = ifelse(mk_p <= 0.05, 'significant', 'non-significant'),
+                mk_slope = ifelse(mk_s > 0, 'increasing', 'decreasing')) 
 
+
+annual_C_cv_sigs <- annual_C_cv_trends %>% 
+  dplyr::ungroup() %>% 
+  dplyr::mutate(sens_p = unlist(sens_p)) %>% 
+  dplyr::select(site, sens_sig, sens_slope, sens_s, sens_p)
+
+
+river_metab_ann %>% 
+  dplyr::left_join(annual_C_cv_sigs) %>% 
+  ggplot2::ggplot(.,
+                  ggplot2::aes(x = year, 
+                               y = GPP_daily_cv,
+                               color = interaction(sens_slope,sens_sig)))+
+  ggplot2::geom_point(aes(group = site))+
+  ggplot2::geom_line(aes(group = site))+
+  #geom_smooth(method = 'lm', se = FALSE)+
+  ggplot2::labs(y = expression(paste(CV[GPP], ' (%)')))+
+  # scale_color_viridis_d(direction = -1)+
+  ggplot2::facet_grid(sens_sig ~ sens_slope)
 
