@@ -23,6 +23,13 @@ rm(list = ls())
 source("C:/Users/Nick Marzolf/Desktop/Research/R code/theme_nick.R")
 theme_set(theme_nick())
 
+{
+  library(dplyr)
+  library(ggplot2)
+  library(ggExtra)
+  library(lme4)
+  library(nlme)
+}
 # 1) read in data ----
 river_light <- readr::read_csv('data/output_data/daily_light_metrics.csv')
 river_metab <- readr::read_csv('data/output_data/usgs_metab_fill_norm.csv') %>% 
@@ -51,8 +58,6 @@ metab_all_annual <- metab_all_daily %>%
                                               sum(GPP/1.25, na.rm = TRUE),
                                               sum(GPP, na.rm = TRUE)),
                    GPP_daily_cv = EnvStats::cv(GPP, na.rm = TRUE)*100)
-
-
 
 
 
@@ -91,6 +96,7 @@ plot_GPP_ann <- ggplot2::ggplot(data = metab_all_annual,
                  legend.position = 'none',
                  panel.grid.major = ggplot2::element_blank(), 
                  panel.grid.minor = ggplot2::element_blank())
+plot_GPP_ann
 
 # calculate long term CV
 lt_cv_df <- metab_all_annual %>% 
@@ -127,16 +133,16 @@ cowplot::plot_grid(plot_GPP_ann,
 
 
 plot <- ggplot(lt_cv_df,
-               aes(x = lt_cv,
-                   y = lt_mean_GPP,
+               aes(x = lt_mean_GPP,
+                   y = lt_cv,
                    color = source))+
   geom_point(size = 1.5)+
-  geom_errorbar(aes(ymin = lt_mean_GPP - lt_se_GPP,
-                    ymax = lt_mean_GPP + lt_se_GPP))+
+  geom_errorbarh(aes(xmin = lt_mean_GPP - lt_se_GPP,
+                     xmax = lt_mean_GPP + lt_se_GPP))+
   ggplot2::scale_color_manual(name = element_blank(),
                               values = c('#855E09','darkblue'))+
-  labs(y = expression(paste("Mean GPP (g C ", m^-2, " ", y^-1, ")", sep = " ")),
-       x = 'Annual GPP CV (%)')+
+  labs(x = expression(paste("Mean GPP (g C ", m^-2, " ", y^-1, ")", sep = " ")),
+       y = 'Annual GPP CV (%)')+
   scale_y_log10()+
   theme(legend.position = c(0.9,0.9),
         legend.background = element_blank())
@@ -184,17 +190,18 @@ river_metab_ann %>%
   ggplot2::geom_point(aes(group = site))+
   ggplot2::geom_line(aes(group = site))+
   scale_y_log10()+
+  scale_x_continuous(n.breaks = 10)+
   gghighlight::gghighlight(sens_sig == 'significant',
-                           use_direct_label = TRUE)+
+                           use_direct_label = FALSE)+
   ggplot2::labs(y = metab_units_area)+
   scale_color_manual(name = 'Trend',
-                     values = c('#855E09',
-                                         '#40E304'))
-                                         # ggplot2::facet_wrap(. ~ sens_slope)
+                     values = c('#855E09','#40E304'),
+                     labels = c('Decreasing', 'Increasing'))+
+  theme(axis.title.x = element_blank())
 
 
 
-# 4) evaluate drivers: light, temperature, and discharge  ----
+# 4) plot drivers: light, temperature, and discharge  ----
 
 river_metab_ann_drivers <- river_metab %>% 
   dplyr::select(date, site, GPP_filled, discharge, daily_PAR, temp.water) %>% 
@@ -252,187 +259,203 @@ units_GPP_ann <- expression(paste('GPP (g C ', m^-2,' ', y^-1,')'))
 
 # drive plots
 ## GPP vs. drivers
-ggarrange(ggplot(driver_sum %>% 
-                   filter(driver == 'light_ann_mean'),
-                 aes(x = value,
-                     y = GPP_mean_ann,
-                     color = GPP_mean_ann))+
-            geom_point()+
-            labs(y = units_GPP_ann,
-                 x = element_blank())+
-            scale_color_gradient(name = metab_units_area,
-                                 low = '#855703',
-                                 high = '#40E304')+
-            theme(legend.position = 'none'),
-          ggplot(driver_sum %>% 
-                   filter(driver == 'discharge_mean'),
-                 aes(x = value,
-                     y = GPP_mean_ann,
-                     color = GPP_mean_ann))+
-            geom_point()+
-            labs(y = element_blank(),
-                 x = element_blank())+
-            scale_color_gradient(name = metab_units_area,
-                                 low = '#855703',
-                                 high = '#40E304')+
-            theme(legend.position = 'none'),
-          ggplot(driver_sum %>% 
-                   filter(driver == 'temp_mean'),
-                 aes(x = value,
-                     y = GPP_mean_ann,
-                     color = GPP_mean_ann))+
-            geom_point()+
-            labs(y = element_blank(),
-                 x = element_blank())+
-            scale_color_gradient(name = metab_units_area,
-                                 low = '#855703',
-                                 high = '#40E304'),
-          
-          # CV GPP vs. drivers
-          ggplot(driver_sum %>% 
-                   filter(driver == 'light_ann_mean'),
-                 aes(x = value,
-                     y = GPP_cv,
-                     color = GPP_mean_ann))+
-            geom_point()+
-            labs(y = expression(paste(CV[GPP], ' (%)')),
-                 x = expression(paste('Mean Annual Light (mol ', m^-2,' ',y^-1,')')))+
-            scale_color_gradient(name = metab_units_area,
-                                 low = '#855703',
-                                 high = '#40E304')+
-            theme(legend.position = 'none'),
-          ggplot(driver_sum %>% 
-                   filter(driver == 'discharge_mean'),
-                 aes(x = value,
-                     y = GPP_cv,
-                     color = GPP_mean_ann))+
-            geom_point()+
-            labs(y = element_blank(),
-                 x = expression(paste('Mean Discharge (', m^3,' ',s^-1,')')))+
-            scale_color_gradient(name = metab_units_area,
-                                 low = '#855703',
-                                 high = '#40E304')+
-            theme(legend.position = 'none'),
-          ggplot(driver_sum %>% 
-                   filter(driver == 'temp_mean'),
-                 aes(x = value,
-                     y = GPP_cv,
-                     color = GPP_mean_ann))+
-            geom_point()+
-            labs(y = element_blank(),
-                 x = 'Mean Temperature (°C)')+
-            scale_color_gradient(name = metab_units_area,
-                                 low = '#855703',
-                                 high = '#40E304'),
-          
-          # GPP vs. CV drivers
-          ggplot(driver_sum %>% 
-                   filter(driver == 'light_ann_cv'),
-                 aes(x = value,
-                     y = GPP_mean_ann,
-                     color = GPP_mean_ann))+
-            geom_point()+
-            labs(y = units_GPP_ann,
-                 x = element_blank())+
-            scale_color_gradient(name = metab_units_area,
-                                 low = '#855703',
-                                 high = '#40E304')+
-            theme(legend.position = 'none'),
-          ggplot(driver_sum %>% 
-                   filter(driver == 'discharge_cv'),
-                 aes(x = value,
-                     y = GPP_mean_ann,
-                     color = GPP_mean_ann))+
-            geom_point()+
-            labs(y = element_blank(),
-                 x = element_blank())+
-            scale_color_gradient(name = metab_units_area,
-                                 low = '#855703',
-                                 high = '#40E304')+
-            theme(legend.position = 'none'),
-          ggplot(driver_sum %>% 
-                   filter(driver == 'temp_cv'),
-                 aes(x = value,
-                     y = GPP_mean_ann,
-                     color = GPP_mean_ann))+
-            geom_point()+
-            labs(y = element_blank(),
-                 x = element_blank())+
-            scale_color_gradient(name = metab_units_area,
-                                 low = '#855703',
-                                 high = '#40E304'),
-          
-          # CV GPP vs. CV drivers
-          ggplot(driver_sum %>% 
-                   filter(driver == 'light_ann_cv'),
-                 aes(x = value,
-                     y = GPP_cv,
-                     color = GPP_mean_ann))+
-            geom_point()+
-            labs(y = expression(paste(CV[GPP], ' (%)')),
-                 x = expression(paste(CV[Light], ' (%)')))+
-            scale_color_gradient(name = metab_units_area,
-                                 low = '#855703',
-                                 high = '#40E304')+
-            theme(legend.position = 'none'),
-          ggplot(driver_sum %>% 
-                   filter(driver == 'discharge_cv'),
-                 aes(x = value,
-                     y = GPP_cv,
-                     color = GPP_mean_ann))+
-            geom_point()+
-            labs(y = element_blank(),
-                 x = expression(paste(CV[Discharge], ' (%)')))+
-            scale_color_gradient(name = metab_units_area,
-                                 low = '#855703',
-                                 high = '#40E304')+
-            theme(legend.position = 'none'),
-          ggplot(driver_sum %>% 
-                   filter(driver == 'temp_cv'),
-                 aes(x = value,
-                     y = GPP_cv,
-                     color = GPP_mean_ann))+
-            geom_point()+
-            labs(y = element_blank(),
-                 x = expression(paste(CV[Temperature], ' (%)')))+
-            scale_color_gradient(name = metab_units_area,
-                                 low = '#855703',
-                                 high = '#40E304')+
-            theme(legend.position = 'top'),
-          ncol = 3, nrow = 4,
-          align = 'hv',
-          legend = 'right',
-          common.legend = TRUE,
-          labels = 'auto',
-          label.x = 0.93)
-
-# multiple regression
-
-gpp_glmer <- lm(data = river_metab_ann_drivers,
-                log10(GPP_ann_C) ~ Q_ann_cv * light_ann_tot + site,
-                #family = gaussian
-)
-summary(gpp_glmer)
-nlme::ranef(gpp_glmer)
-nlme::fixef(gpp_glmer)
-plot(gpp_glmer)
+ggarrange(
+  ggplot(driver_sum %>% 
+           filter(driver == 'light_ann_mean'),
+         aes(x = value,
+             y = GPP_mean_ann,
+             color = GPP_mean_ann))+
+    geom_point()+
+    labs(y = units_GPP_ann,
+         x = expression(paste('Mean Annual Light (mol ', m^-2,' ', y^-1,')')))+
+    scale_color_gradient(name = metab_units_area,
+                         low = '#855703',
+                         high = '#40E304')+
+    theme(legend.position = 'none'),
+  
+  ggplot(driver_sum %>% 
+           filter(driver == 'discharge_mean'),
+         aes(x = value,
+             y = GPP_mean_ann,
+             color = GPP_mean_ann))+
+    geom_point()+
+    scale_x_log10()+
+    labs(y = element_blank(),
+         x = expression(paste('Mean Annual Discharge (', m^3, ' ',s^-1,')')))+
+    scale_color_gradient(name = metab_units_area,
+                         low = '#855703',
+                         high = '#40E304')+
+    theme(legend.position = 'none'),
+  ggplot(driver_sum %>% 
+           filter(driver == 'temp_mean'),
+         aes(x = value,
+             y = GPP_mean_ann,
+             color = GPP_mean_ann))+
+    geom_point()+
+    labs(y = element_blank(),
+         x = 'Mean Annual Temperature (°C)')+
+    scale_color_gradient(name = metab_units_area,
+                         low = '#855703',
+                         high = '#40E304'),
+  
+  
+  
+  # GPP vs. CV drivers
+  ggplot(driver_sum %>% 
+           filter(driver == 'light_ann_cv'),
+         aes(x = value,
+             y = GPP_mean_ann,
+             color = GPP_mean_ann))+
+    geom_point()+
+    labs(y = units_GPP_ann,
+         x = expression(paste(CV[Light], ' (%)')))+
+    scale_color_gradient(name = metab_units_area,
+                         low = '#855703',
+                         high = '#40E304')+
+    theme(legend.position = 'none'),
+  ggplot(driver_sum %>% 
+           filter(driver == 'discharge_cv'),
+         aes(x = value,
+             y = GPP_mean_ann,
+             color = GPP_mean_ann))+
+    geom_point()+
+    labs(y = element_blank(),
+         x = expression(paste(CV[Discharge], ' (%)')))+
+    scale_color_gradient(name = metab_units_area,
+                         low = '#855703',
+                         high = '#40E304')+
+    theme(legend.position = 'none'),
+  ggplot(driver_sum %>% 
+           filter(driver == 'temp_cv'),
+         aes(x = value,
+             y = GPP_mean_ann,
+             color = GPP_mean_ann))+
+    geom_point()+
+    labs(y = element_blank(),
+         x = expression(paste(CV[Temperature], '(%)')))+
+    scale_color_gradient(name = metab_units_area,
+                         low = '#855703',
+                         high = '#40E304'),
+  ncol = 3, nrow = 2,
+  align = 'hv',
+  legend = 'right',
+  common.legend = TRUE,
+  labels = 'auto',
+  label.x = 0.93)
 
 
+
+# CV of GPP vs. same drivers
+ggarrange(
+  ggplot(driver_sum %>% 
+           filter(driver == 'light_ann_mean'),
+         aes(x = value,
+             y = GPP_cv,
+             color = GPP_mean_ann))+
+    geom_point()+
+    labs(y = expression(paste(CV[GPP], ' (%)')),
+         x = expression(paste('Mean Annual Light (mol ', m^-2,' ', y^-1,')')))+
+    scale_color_gradient(name = metab_units_area,
+                         low = '#855703',
+                         high = '#40E304')+
+    theme(legend.position = 'none'),
+  
+  ggplot(driver_sum %>% 
+           filter(driver == 'discharge_mean'),
+         aes(x = value,
+             y = GPP_cv,
+             color = GPP_mean_ann))+
+    geom_point()+
+    scale_x_log10()+
+    labs(y = element_blank(),
+         x = expression(paste('Mean Annual Discharge (', m^3, ' ',s^-1,')')))+
+    scale_color_gradient(name = metab_units_area,
+                         low = '#855703',
+                         high = '#40E304')+
+    theme(legend.position = 'none'),
+  ggplot(driver_sum %>% 
+           filter(driver == 'temp_mean'),
+         aes(x = value,
+             y = GPP_cv,
+             color = GPP_mean_ann))+
+    geom_point()+
+    labs(y = element_blank(),
+         x = 'Mean Annual Temperature (°C)')+
+    scale_color_gradient(name = metab_units_area,
+                         low = '#855703',
+                         high = '#40E304'),
+  
+  
+  
+  # GPP vs. CV drivers
+  ggplot(driver_sum %>% 
+           filter(driver == 'light_ann_cv'),
+         aes(x = value,
+             y = GPP_cv,
+             color = GPP_mean_ann))+
+    geom_point()+
+    labs(y = expression(paste(CV[GPP], ' (%)')),
+         x = expression(paste(CV[Light], ' (%)')))+
+    scale_color_gradient(name = metab_units_area,
+                         low = '#855703',
+                         high = '#40E304')+
+    theme(legend.position = 'none'),
+  ggplot(driver_sum %>% 
+           filter(driver == 'discharge_cv'),
+         aes(x = value,
+             y = GPP_cv,
+             color = GPP_mean_ann))+
+    geom_point()+
+    labs(y = element_blank(),
+         x = expression(paste(CV[Discharge], ' (%)')))+
+    scale_color_gradient(name = metab_units_area,
+                         low = '#855703',
+                         high = '#40E304')+
+    theme(legend.position = 'none'),
+  ggplot(driver_sum %>% 
+           filter(driver == 'temp_cv'),
+         aes(x = value,
+             y = GPP_cv,
+             color = GPP_mean_ann))+
+    geom_point()+
+    labs(y = element_blank(),
+         x = expression(paste(CV[Temperature], '(%)')))+
+    scale_color_gradient(name = metab_units_area,
+                         low = '#855703',
+                         high = '#40E304'),
+  ncol = 3, nrow = 2,
+  align = 'hv',
+  legend = 'right',
+  common.legend = TRUE,
+  labels = 'auto',
+  label.x = 0.93)
+
+
+
+# 5) driver stats: for all site-years ----
+
+
+# both drivers
 gpp_mult_reg <- lme4::lmer(data = river_metab_ann_drivers,
-                           log10(GPP_ann_C) ~ Q_ann_cv * light_ann_tot + (1|site))
+                           GPP_ann_C ~ Q_ann_cv + light_ann_tot + temp_ann_mean + (1|site)
+)
 summary(gpp_mult_reg)
+car::Anova(gpp_mult_reg)
+plot(gpp_mult_reg)
+resid(gpp_mult_reg) %>% hist()
 
-mult_model_eff <- nlme::ranef(gpp_mult_reg)
+nlme::ranef(gpp_mult_reg)
+nlme::fixef(gpp_mult_reg)
 
-anova(gpp_glmer, gpp_mult_reg)
 
-
+# light only
 gpp_mult_reg_light <- lme4::lmer(data = river_metab_ann_drivers,
                                  log10(GPP_ann_C) ~ light_ann_tot + (1|site))
 summary(gpp_mult_reg_light)
 light_model_eff <- nlme::ranef(gpp_mult_reg_light)
 
 
+# cv Q only
 gpp_mult_reg_Q <- lme4::lmer(data = river_metab_ann_drivers,
                              log10(GPP_ann_C) ~ Q_ann_cv + (1|site))
 summary(gpp_mult_reg_Q)
@@ -444,7 +467,7 @@ eff <- cbind(q_model_eff$site,
 names(eff) <- c('CV_Q only', 'light only', 'CV_Q*light')
 
 
-
+# extract coefficients from multivariate model
 out <- data.frame(site = character(),
                   r2 = numeric(),
                   p_val = numeric())
@@ -488,3 +511,30 @@ mean_ann <- river_metab_ann_drivers %>%
 
 summary(lm(data = mean_ann,
            GPP_ann ~ Q_Cv_mean * light_mean))
+
+# 6) driver stats for average site years
+glimpse(river_metab_ann_drivers_site)
+
+hist(river_metab_ann_drivers_site$GPP_mean_ann)      # not normal
+hist(log(river_metab_ann_drivers_site$GPP_mean_ann)) # not normal
+
+
+shapiro.test(driver_sum$GPP_mean_ann)       # not normal
+shapiro.test(log(driver_sum$GPP_mean_ann))  # not normal
+shapiro.test(sqrt(driver_sum$GPP_mean_ann)) # not normal 
+
+
+gpp_glmer_site <- lm(data = river_metab_ann_drivers_site,
+                     log10(GPP_mean_ann) ~ discharge_cv * light_ann_mean,
+                     #family = gaussian
+)
+summary(gpp_glmer_site)
+nlme::ranef(gpp_glmer_site)
+nlme::fixef(gpp_glmer_site)
+plot(gpp_glmer_site)
+
+
+
+
+
+
