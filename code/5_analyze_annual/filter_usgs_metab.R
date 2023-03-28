@@ -57,11 +57,11 @@ light_sites <- daily_light %>%
 usgs_metab_use <- estimates %>% 
   mutate(year = lubridate::year(date),
          site_year = paste(site, year, sep = '-')) %>% 
-  filter(site_year %in% good_site_years,
-         site_year %in% light_sites) %>% 
+  filter(site_year %in% good_site_years) %>% 
   select(-site_year, -year)
 
-
+readr::write_csv(usgs_metab_use,
+                 'data/output_data/good_estimates_2007-2021.csv')
 
 # gap-fill and normalize
 source('code/functions/fill_and_normalize_metab.R')

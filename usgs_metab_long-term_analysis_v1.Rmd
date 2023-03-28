@@ -1,46 +1,82 @@
-## Header ----
-## Script name: usgs_annual_metabolism.R
-##
-## Purpose of script: compile and analyze annual GPP data from USGS sites (2007-2021)
-##
-## Author: Nick Marzolf
-## Date Created: 2022-10-07
-## Date Modified: 
-## Email: nicholas.marzolf@duke.edu
-##
-## load packages:  
-{library(tidyverse)
-  library(dplyr)
-  library(ggplot2)
-  library(lubridate)
-  library(lme4)
-  library(nlme)
-  library(ggpubr)
-  library(performance)
-  library(EnvStats)
-  library(ggExtra)
-}
-##
-## clear the environment if needed
-rm(list = ls())
-##
-## set the ggplot theme
+---
+title: 'Data for: Are annual river productivity regimes changing over time?'
+author: "Nick Marzolf"
+date: "2023-03-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+RMarkdown file to accompany []. 
+
+To recreate this HTML, load the data files into a folder named 'Data' at the same path as the .rmd file, open the .rmd file, and click 'Knit'.
+
+# Load packages
+```{r load-packages, echo = TRUE, message = FALSE, warning = FALSE}
+# data manipulation
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+library(purrr)
+library(tibble)
+
+# plotting
+library(ggplot2)
+library(ggpubr)
+library(ggExtra)
 source("C:/Users/Nick Marzolf/Desktop/Research/R code/theme_nick.R")
 theme_set(theme_nick())
 
+# statistics
+library(lme4)
+library(nlme)
+library(performance)
+library(EnvStats)
+library(EflowStats)
+library(car)
+library(merTools)
 
-# 1) read in data ----
+# other
+library(pander)
+
+# define constants and axis labels
+metab_units_area <- (expression(paste('GPP (g C ', m^-2, ' ',y^-1,')', sep = ' ')))
+```
+
+# Explore sites
+```{r sites, warning = FALSE, echo = TRUE}
+# histogram of watershed areas
+table_s1 <- readr::read_csv('data/data_citation/1_site_info.csv')
+table_s1
+
+fig_s1 <- ggplot(site_dat,
+       aes(x = drain_area_va*2.58999))+ # conver to km2
+  geom_histogram()+
+  labs(x = expression(paste('Watershed area (', km^2,')')),
+       y = 'Count')+
+  scale_x_log10()
+fig_s1
+
+ggsave(plot = fig_s1,
+       'manuscript/long-term_GPP/figures/fig_s1.png',
+       dpi = 600,
+       width = 3.5, height = 3)
+```
+
+# Load GPP data
+```{r load-data, warning = FALSE, echo = TRUE}
+
 river_metab <- readr::read_csv('data/output_data/good_estimates_2007-2021.csv') 
-
 fluxnet_metab <- readr::read_csv('data/output_data/fluxnet_daily_wBiome.csv')
 
+```
 
-metab_units_area <- (expression(paste('GPP (g C ', m^-2, ' ',y^-1,')', sep = ' ')))
+# Calculate Annual Productivity
+```{r calc-annual, warning = FALSE, echo = TRUE}
 
-# # lake_metab <- read_csv('data/output_data/lake_metab_fill_norm.csv')
-# 
-
-# 2) calculate long-term total GPP and CV for FNet and USGS ----
 metab_all_daily <- rbind(river_metab %>% 
                            dplyr::select(site, date, GPP = GPP) %>% 
                            dplyr::mutate(source = 'USGS',
@@ -49,7 +85,6 @@ metab_all_daily <- rbind(river_metab %>%
                            dplyr::select(site, date, GPP, biome) %>% 
                            dplyr::mutate(source = 'Fluxnet'))
 
-
 metab_all_annual <- metab_all_daily %>% 
   dplyr::mutate(year = lubridate::year(date)) %>% 
   dplyr::group_by(source, site, year, biome) %>% 
@@ -57,16 +92,15 @@ metab_all_annual <- metab_all_daily %>%
                                               sum(GPP/1.25, na.rm = TRUE),
                                               sum(GPP, na.rm = TRUE)),
                    GPP_daily_cv = EnvStats::cv(GPP, 
-                                               na.rm = TRUE, 
-                                               method = 'l.moments')*100)
+                                               na.rm = TRUE, method = 'l.moments')*100)
 
 
-
-plot_GPP_ts <- ggplot2::ggplot(metab_all_annual,
-                               aes(x = year,
-                                   y = GPP_ann_C,
-                                   group = site,
-                                   color = GPP_ann_C))+
+# plot of annual productivity time-series
+fig_s2 <- ggplot2::ggplot(metab_all_annual,
+                          aes(x = year,
+                              y = GPP_ann_C,
+                              group = site,
+                              color = GPP_ann_C))+
   ggplot2::geom_line()+
   ggplot2::geom_point()+
   ggplot2::scale_color_gradient(name = metab_units_area,
@@ -75,14 +109,15 @@ plot_GPP_ts <- ggplot2::ggplot(metab_all_annual,
   ggplot2::facet_grid(source ~ .)+
   ggplot2::ylab(metab_units_area)+
   ggplot2::theme(axis.title.x = element_blank())
-plot_GPP_ts
+fig_s2
+```
 
-
-
-plot_GPP_ann <- ggplot2::ggplot(data = metab_all_annual,
-                                ggplot2::aes(x = reorder(site, desc(GPP_ann_C)), 
-                                             y = GPP_ann_C,
-                                             color = GPP_ann_C))+
+```{r viz-ann-prod, warning = FALSE, echo = TRUE}
+fig_1_top <- ggplot2::ggplot(data = metab_all_annual,
+                             ggplot2::aes(x = reorder(site, 
+                                                      desc(GPP_ann_C)), 
+                                          y = GPP_ann_C,
+                                          color = GPP_ann_C))+
   ggplot2::geom_point()+
   ggplot2::geom_line()+
   ggplot2::ylab(metab_units_area)+
@@ -94,10 +129,9 @@ plot_GPP_ann <- ggplot2::ggplot(data = metab_all_annual,
   ggplot2::scale_y_log10(limits = c(10, 10000))+
   ggplot2::theme(axis.title.x = ggplot2::element_blank(),
                  axis.text.x = ggplot2::element_blank(),
-                 #legend.position = 'top',
                  panel.grid.major = ggplot2::element_blank(), 
                  panel.grid.minor = ggplot2::element_blank())
-plot_GPP_ann
+fig_1_top
 
 # calculate long term CV
 lt_cv_df <- metab_all_annual %>% 
@@ -108,15 +142,17 @@ lt_cv_df <- metab_all_annual %>%
                    lt_cv = lt_mean_GPP/sd(GPP_ann_C, na.rm = TRUE),
                    yr_range = paste(min(year), max(year), sep = '-'))  
 
+# ID the 5 most variable FLUXNET sites
 lt_cv_df_sub_flux <- data.frame(lt_cv_df) %>% 
   dplyr::arrange(desc(lt_cv)) %>% 
   dplyr::filter(source == 'Fluxnet',
                 between(row_number(), 1, 5))
 lt_cv_df_sub_flux
 
+# ID the 5 most variable river sites
 river_names <- readr::read_csv('data/site_info/nwis_site_info.csv') %>% 
-  mutate(site = paste0('nwis_',site_no)) %>% 
-  select(site, station_nm)
+  dplyr::mutate(site = paste0('nwis_',site_no)) %>% 
+  dplyr::select(site, station_nm)
 
 lt_cv_df_sub_flux_usgs <- data.frame(lt_cv_df) %>% 
   dplyr::arrange(desc(lt_cv)) %>% 
@@ -127,7 +163,7 @@ lt_cv_df_sub_flux_usgs <- data.frame(lt_cv_df) %>%
 lt_cv_df_sub_flux_usgs
 
 # and plot
-plot_lt_cv <- ggplot2::ggplot()+
+fig_1_bottom <- ggplot2::ggplot()+
   ggplot2::geom_dotplot(data = lt_cv_df,
                         aes(x = source, y = lt_cv,
                             fill = lt_mean_GPP,
@@ -158,23 +194,25 @@ plot_lt_cv <- ggplot2::ggplot()+
                             nudge_y = c(50,40,30,20,10))+
   ggplot2::theme(axis.title.x = element_blank(),
                  legend.position = 'none')
-plot_lt_cv
+fig_1_bottom
 
 
-fig_1 <- cowplot::plot_grid(plot_GPP_ann,
-                            plot_lt_cv,
+fig_1 <- cowplot::plot_grid(fig_1_top,
+                            fig_1_bottom,
                             nrow = 2, 
                             ncol = 1,
                             common.legend = TRUE,
                             align = 'hv',
                             axis = 'l')
+fig_1
 
 ggsave(plot = fig_1,
        'manuscript/long-term_GPP/figures/fig_1.png',
        dpi = 600,
        width = 6.5, height = 5)
+```
 
-
+```{r fig-2, warning = FALSE, echo = TRUE}
 fig_2_main <- ggplot(lt_cv_df,
                      aes(x = lt_mean_GPP,
                          y = lt_cv,
@@ -187,7 +225,7 @@ fig_2_main <- ggplot(lt_cv_df,
   labs(x = expression(paste("Mean Annual GPP (g C ", m^-2, " ", y^-1, ")", sep = " ")),
        y = expression(paste(CV[GPP],' (%)')),
        color = NULL)+
-  geom_smooth(method = 'lm')+
+  #scale_x_log10()+
   theme(legend.position = c(0.15,0.85),
         legend.background = element_rect(fill = 'white',
                                          color = 'black'),
@@ -201,16 +239,15 @@ fig_2 <- ggExtra::ggMarginal(fig_2_main,
                              groupFill = TRUE,
                              groupColour = TRUE,
                              size = 10)
+fig_2
 ggsave(plot = fig_2,
        'manuscript/long-term_GPP/figures/fig_2.png',
        dpi = 300,
        width = 6, height = 5)
+```
 
-
-
-# 3) calculate trends ----
-
-# trends in total productivity
+# Productivity trends
+```{r prod-trends, warning = FALSE, echo = TRUE}
 river_metab_ann <- metab_all_annual %>%
   dplyr::filter(source == 'USGS') 
 
@@ -272,7 +309,10 @@ ggsave(plot = fig_3,
        dpi = 600,
        width = 6, height = 4)
 
-# 4) plot drivers: light, temperature, and discharge  ----
+```
+
+# Drivers of annual productivity
+```{r prod-drivers, warning = FALSE, echo = TRUE}
 river_light <- readr::read_csv('data/output_data/daily_light_metrics.csv')
 
 library(BernhardtMetabolism)
@@ -296,40 +336,27 @@ river_metab_ann_drivers <- river_metab_wLight %>%
                    temp_ann_mean = mean(temp.water, na.rm = TRUE)) %>%      # mol m-2 y-1
   dplyr::filter(light_ann_tot != 0)  
 
-
-# each point is a site-year
-ggplot2::ggplot(river_metab_ann_drivers,
-                ggplot2::aes(x = light_ann_tot,
-                             y = Q_ann_cv,
-                             color = GPP_ann_C))+
-  ggplot2::geom_point(size = 2,
-                      alpha = 0.8)+
-  # ggplot2::labs(x = expression(paste('Stream PAR (mol ', m^-2,' ',y^-1,')')),
-  #               y = expression(paste(CV[Q], ' (%)')))+
-  ggplot2::scale_color_gradient(name = metab_units_area,
-                                low = '#855703',
-                                high = '#40E304')
-
-# summarise by site
 river_metab_ann_drivers_site <- river_metab_ann_drivers %>% 
   dplyr::group_by(site) %>% 
   dplyr::summarise(GPP_mean_ann = mean(GPP_ann_C, na.rm = TRUE),
                    GPP_sd_ann = sd(GPP_ann_C, na.rm = TRUE),
                    n_obs = length(GPP_ann_C),
                    GPP_se_ann = GPP_sd_ann/n_obs,
-                   GPP_cv = EnvStats::cv(GPP_ann_C)*100,
+                   GPP_cv = EnvStats::cv(GPP_ann_C, method = 'l.moments')*100,
                    light_ann_mean = mean(light_ann_tot, na.rm = TRUE),
-                   light_ann_cv = EnvStats::cv(light_ann_tot)*100,
+                   light_ann_cv = EnvStats::cv(light_ann_tot, method = 'l.moments')*100,
                    discharge_mean = mean(Q_ann_mean, na.rm = TRUE),
-                   discharge_cv = EnvStats::cv(Q_ann_mean)*100,
+                   discharge_cv = EnvStats::cv(Q_ann_mean, method = 'l.moments')*100,
                    temp_mean = mean(temp_ann_mean, na.rm = TRUE),
                    temp_sd = sd(temp_ann_mean, na.rm = TRUE),
                    temp_se = temp_sd/length(temp_ann_mean),
-                   temp_cv = EnvStats::cv(temp_ann_mean)*100) 
+                   temp_cv = EnvStats::cv(temp_ann_mean, method = 'l.moments')*100) 
 
 driver_sum <- river_metab_ann_drivers_site %>% 
-  tidyr::pivot_longer(cols = c(light_ann_mean, light_ann_cv, 
-                               discharge_mean, discharge_cv,
+  tidyr::pivot_longer(cols = c(light_ann_mean, 
+                               light_ann_cv, 
+                               discharge_mean, 
+                               discharge_cv,
                                temp_mean,temp_cv),
                       names_to = 'driver',
                       values_to = 'value') 
@@ -338,199 +365,25 @@ driver_sum$driver <- factor(driver_sum$driver,
                             levels = c('light_ann_mean','discharge_mean', 'temp_mean', 
                                        'light_ann_cv', 'discharge_cv','temp_cv'))
 
-units_GPP_ann <- expression(paste('GPP (g C ', m^-2,' ', y^-1,')'))
-
-# drive plots
-## GPP vs. drivers
-# ggarrange(
-#   ggplot(driver_sum %>% 
-#            filter(driver == 'light_ann_mean'),
-#          aes(x = value,
-#              y = GPP_mean_ann,
-#              color = GPP_mean_ann))+
-#     geom_point()+
-#     labs(y = units_GPP_ann,
-#          x = expression(paste('Mean Annual Light (mol ', m^-2,' ', y^-1,')')))+
-#     scale_color_gradient(name = metab_units_area,
-#                          low = '#855703',
-#                          high = '#40E304')+
-#     theme(legend.position = 'none'),
-#   
-#   ggplot(driver_sum %>% 
-#            filter(driver == 'discharge_mean'),
-#          aes(x = value,
-#              y = GPP_mean_ann,
-#              color = GPP_mean_ann))+
-#     geom_point()+
-#     scale_x_log10()+
-#     labs(y = element_blank(),
-#          x = expression(paste('Mean Annual Discharge (', m^3, ' ',s^-1,')')))+
-#     scale_color_gradient(name = metab_units_area,
-#                          low = '#855703',
-#                          high = '#40E304')+
-#     theme(legend.position = 'none'),
-#   ggplot(driver_sum %>% 
-#            filter(driver == 'temp_mean'),
-#          aes(x = value,
-#              y = GPP_mean_ann,
-#              color = GPP_mean_ann))+
-#     geom_point()+
-#     labs(y = element_blank(),
-#          x = 'Mean Annual Temperature (°C)')+
-#     scale_color_gradient(name = metab_units_area,
-#                          low = '#855703',
-#                          high = '#40E304'),
-#   
-#   
-#   
-#   # GPP vs. CV drivers
-#   ggplot(driver_sum %>% 
-#            filter(driver == 'light_ann_cv'),
-#          aes(x = value,
-#              y = GPP_mean_ann,
-#              color = GPP_mean_ann))+
-#     geom_point()+
-#     labs(y = units_GPP_ann,
-#          x = expression(paste(CV[Light], ' (%)')))+
-#     scale_color_gradient(name = metab_units_area,
-#                          low = '#855703',
-#                          high = '#40E304')+
-#     theme(legend.position = 'none'),
-#   ggplot(driver_sum %>% 
-#            filter(driver == 'discharge_cv'),
-#          aes(x = value,
-#              y = GPP_mean_ann,
-#              color = GPP_mean_ann))+
-#     geom_point()+
-#     labs(y = element_blank(),
-#          x = expression(paste(CV[Discharge], ' (%)')))+
-#     scale_color_gradient(name = metab_units_area,
-#                          low = '#855703',
-#                          high = '#40E304')+
-#     theme(legend.position = 'none'),
-#   ggplot(driver_sum %>% 
-#            filter(driver == 'temp_cv'),
-#          aes(x = value,
-#              y = GPP_mean_ann,
-#              color = GPP_mean_ann))+
-#     geom_point()+
-#     labs(y = element_blank(),
-#          x = expression(paste(CV[Temperature], '(%)')))+
-#     scale_color_gradient(name = metab_units_area,
-#                          low = '#855703',
-#                          high = '#40E304'),
-#   ncol = 3, nrow = 2,
-#   align = 'hv',
-#   legend = 'right',
-#   common.legend = TRUE,
-#   labels = 'auto',
-#   label.x = 0.93)
-
-
-
-# CV of GPP vs. same drivers
-# ggarrange(
-#   ggplot(driver_sum %>% 
-#            filter(driver == 'light_ann_mean'),
-#          aes(x = value,
-#              y = GPP_cv,
-#              color = GPP_mean_ann))+
-#     geom_point()+
-#     labs(y = expression(paste(CV[GPP], ' (%)')),
-#          x = expression(paste('Mean Annual Light (mol ', m^-2,' ', y^-1,')')))+
-#     scale_color_gradient(name = metab_units_area,
-#                          low = '#855703',
-#                          high = '#40E304')+
-#     theme(legend.position = 'none'),
-#   
-#   ggplot(driver_sum %>% 
-#            filter(driver == 'discharge_mean'),
-#          aes(x = value,
-#              y = GPP_cv,
-#              color = GPP_mean_ann))+
-#     geom_point()+
-#     scale_x_log10()+
-#     labs(y = element_blank(),
-#          x = expression(paste('Mean Annual Discharge (', m^3, ' ',s^-1,')')))+
-#     scale_color_gradient(name = metab_units_area,
-#                          low = '#855703',
-#                          high = '#40E304')+
-#     theme(legend.position = 'none'),
-#   ggplot(driver_sum %>% 
-#            filter(driver == 'temp_mean'),
-#          aes(x = value,
-#              y = GPP_cv,
-#              color = GPP_mean_ann))+
-#     geom_point()+
-#     labs(y = element_blank(),
-#          x = 'Mean Annual Temperature (°C)')+
-#     scale_color_gradient(name = metab_units_area,
-#                          low = '#855703',
-#                          high = '#40E304'),
-#   
-#   
-#   
-#   # GPP vs. CV drivers
-#   ggplot(driver_sum %>% 
-#            filter(driver == 'light_ann_cv'),
-#          aes(x = value,
-#              y = GPP_cv,
-#              color = GPP_mean_ann))+
-#     geom_point()+
-#     labs(y = expression(paste(CV[GPP], ' (%)')),
-#          x = expression(paste(CV[Light], ' (%)')))+
-#     scale_color_gradient(name = metab_units_area,
-#                          low = '#855703',
-#                          high = '#40E304')+
-#     theme(legend.position = 'none'),
-#   ggplot(driver_sum %>% 
-#            filter(driver == 'discharge_cv'),
-#          aes(x = value,
-#              y = GPP_cv,
-#              color = GPP_mean_ann))+
-#     geom_point()+
-#     labs(y = element_blank(),
-#          x = expression(paste(CV[Discharge], ' (%)')))+
-#     scale_color_gradient(name = metab_units_area,
-#                          low = '#855703',
-#                          high = '#40E304')+
-#     theme(legend.position = 'none'),
-#   ggplot(driver_sum %>% 
-#            filter(driver == 'temp_cv'),
-#          aes(x = value,
-#              y = GPP_cv,
-#              color = GPP_mean_ann))+
-#     geom_point()+
-#     labs(y = element_blank(),
-#          x = expression(paste(CV[Temperature], '(%)')))+
-#     scale_color_gradient(name = metab_units_area,
-#                          low = '#855703',
-#                          high = '#40E304'),
-#   ncol = 3, nrow = 2,
-#   align = 'hv',
-#   legend = 'right',
-#   common.legend = TRUE,
-#   labels = 'auto',
-#   label.x = 0.93)
-
-
-
-# 5) driver stats: for all site-years ----
-
 # all 3 drivers
 gpp_mult_reg <- lme4::lmer(data = river_metab_ann_drivers,
                            GPP_ann_C ~ Q_ann_cv + light_ann_tot + temp_ann_mean + (1|site))
 summary(gpp_mult_reg)
 car::Anova(gpp_mult_reg)
 plot(gpp_mult_reg)
-resid(gpp_mult_reg) %>% hist()
+resid(gpp_mult_reg) %>% 
+  hist()
 
+## extract random effects
 mult_ranef <- nlme::ranef(gpp_mult_reg)[[1]] %>% 
   data.frame() %>% 
-  rownames_to_column() %>% 
-  rename(site = rowname,
-         ranef = X.Intercept.) %>% 
-  mutate(effect = 'interaction')
+  tibble::rownames_to_column() %>% 
+  dplyr::rename(site = rowname,
+                ranef = X.Intercept.) %>% 
+  dplyr::mutate(effect = 'interaction')
+
+
+## fixed effects
 nlme::fixef(gpp_mult_reg)
 
 
@@ -538,68 +391,82 @@ nlme::fixef(gpp_mult_reg)
 gpp_reg_light <- lme4::lmer(data = river_metab_ann_drivers,
                             GPP_ann_C ~ light_ann_tot + (1|site))
 summary(gpp_reg_light)
+
+## light only random effects
 light_ranef <- nlme::ranef(gpp_reg_light)[[1]] %>% 
   data.frame() %>% 
-  rownames_to_column() %>% 
-  rename(site = rowname,
-         ranef = X.Intercept.) %>% 
-  mutate(effect = 'light')
+  tibble::rownames_to_column() %>% 
+  dplyr::rename(site = rowname,
+                ranef = X.Intercept.) %>% 
+  dplyr::mutate(effect = 'light')
 
 
 # cv Q only
 gpp_reg_cvQ <- lme4::lmer(data = river_metab_ann_drivers,
                           GPP_ann_C ~ Q_ann_cv + (1|site))
 summary(gpp_reg_cvQ)
+
+## CV_Q random effects
 cvQ_ranef <- nlme::ranef(gpp_reg_cvQ)[[1]] %>% 
   data.frame() %>% 
-  rownames_to_column() %>% 
-  rename(site = rowname,
-         ranef = X.Intercept.) %>% 
-  mutate(effect = 'cv_Q')
+  tibble::rownames_to_column() %>% 
+  dplyr::rename(site = rowname,
+                ranef = X.Intercept.) %>% 
+  dplyr::mutate(effect = 'cv_Q')
 
-# temperature
+
+# temperature only
 gpp_reg_temp <- lme4::lmer(data = river_metab_ann_drivers,
                            GPP_ann_C ~ temp_ann_mean + (1|site))
 
 summary(gpp_reg_temp)
 temp_ranef <- nlme::ranef(gpp_reg_temp)[[1]] %>% 
   data.frame() %>% 
-  rownames_to_column() %>% 
-  rename(site = rowname,
-         ranef = X.Intercept.) %>% 
-  mutate(effect = 'temperature')
+  tibble::rownames_to_column() %>% 
+  dplyr::rename(site = rowname,
+                ranef = X.Intercept.) %>% 
+  dplyr::mutate(effect = 'temperature')
 
 
 # compile and compare model outputs
-ranefs_all <- list(mult_ranef,
-                   light_ranef,
-                   temp_ranef,
-                   cvQ_ranef) %>% 
+
+## Random effects (ie site-level effects)
+table_s2 <- list(mult_ranef,
+                 light_ranef,
+                 temp_ranef,
+                 cvQ_ranef) %>% 
   reduce(rbind) %>% 
   pivot_wider(names_from = effect,
               values_from = ranef)
-ranefs_all[,-1] <- round(ranefs_all[,-1], 1)
+table_s2[,-1] <- round(table_s2[,-1], 1)
+colnames(table_s2) <- c('Site', 'Interaction', 'Light', 'Temperature', 'CVQ')
 
+table_s2
 
+readr::write_csv(table_s2,
+                 'data/data_citation/5_random_effects.csv')
+
+# Compare models by AICw
 performance::compare_performance(gpp_reg_temp,
                                  gpp_reg_cvQ, 
                                  gpp_reg_light,
                                  gpp_mult_reg) 
 
+# predict from best model
 pred_river_metab_ann_drivers <- river_metab_ann_drivers %>% 
-  group_by(site, Q_ann_cv, light_ann_tot, temp_ann_mean) %>% 
-  summarise(n = n()) %>% 
-  ungroup() %>% 
-  mutate(GPP_ann_C_pred = stats::predict(gpp_mult_reg, 
-                                         river_metab_ann_drivers,
-                                         re.form = ~(1|site)),
-         intervals = merTools::predictInterval(gpp_mult_reg,
-                                               level = 0.95,
-                                               newdata = river_metab_ann_drivers,
-                                               n.sims = 1000,
-                                               stat = 'mean',
-                                               type = 'linear.prediction'),
-         GPP_ann_C = river_metab_ann_drivers$GPP_ann_C)
+  dplyr::group_by(site, Q_ann_cv, light_ann_tot, temp_ann_mean) %>% 
+  dplyr::summarise(n = n()) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::mutate(GPP_ann_C_pred = stats::predict(gpp_mult_reg, 
+                                                river_metab_ann_drivers,
+                                                re.form = ~(1|site)),
+                intervals = merTools::predictInterval(gpp_mult_reg,
+                                                      level = 0.95,
+                                                      newdata = river_metab_ann_drivers,
+                                                      n.sims = 1000,
+                                                      stat = 'mean',
+                                                      type = 'linear.prediction'),
+                GPP_ann_C = river_metab_ann_drivers$GPP_ann_C)
 
 cond_r2 <- round(performance::performance(gpp_mult_reg)$R2_conditional, 2)
 
@@ -612,7 +479,7 @@ fig_4 <- ggplot(pred_river_metab_ann_drivers,
   geom_abline(slope = 1,
               intercept = 0,
               linetype = 'dashed',
-              color = 'red')+
+              color = 'black')+
   labs(x = metab_units_area,
        y = expression(paste('Predicted GPP (g C ', m^-2, ' ',y^-1,')')))+
   lims(x = c(0, 4000),
@@ -627,41 +494,33 @@ ggsave(plot = fig_4,
        dpi = 600,
        width = 5, height = 4)
 
+```
 
-# 6) driver stats for average site years ----
-glimpse(river_metab_ann_drivers_site)
-
-hist(river_metab_ann_drivers_site$GPP_mean_ann)      # not normal
-hist(log(river_metab_ann_drivers_site$GPP_mean_ann)) # not normal
-
-
-shapiro.test(driver_sum$GPP_mean_ann)       # not normal
-shapiro.test(log(driver_sum$GPP_mean_ann))  # not normal
-shapiro.test(sqrt(driver_sum$GPP_mean_ann)) # not normal 
+# Session Info
+```{r session-info}
+pander(sessionInfo())
+```
 
 
-gpp_glm_site_all <- glm(data = river_metab_ann_drivers_site,
-                        GPP_mean_ann ~ discharge_cv + light_ann_mean + temp_mean)
-
-summary(gpp_glm_site_all)
-plot(gpp_glm_site_all)
-hist(gpp_glm_site_all$residuals)
-performance(gpp_glm_site_all)
 
 
-gpp_glm_site_light <- glm(data = river_metab_ann_drivers_site,
-                          GPP_mean_ann ~ light_ann_mean)
-summary(gpp_glm_site_light)
-gpp_glm_site_cvQ <- glm(data = river_metab_ann_drivers_site,
-                        GPP_mean_ann ~ discharge_cv)
-summary(gpp_glm_site_cvQ)
-gpp_glm_site_temp <- glm(data = river_metab_ann_drivers_site,
-                         GPP_mean_ann ~ temp_mean)
-summary(gpp_glm_site_temp)
 
-performance::compare_performance(gpp_glm_site_temp,
-                                 gpp_glm_site_cvQ,
-                                 gpp_glm_site_light,
-                                 gpp_glm_site_all)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
