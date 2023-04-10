@@ -24,9 +24,8 @@ theme_set(theme_nick())
 
 
 # read in data ----
-river_light <- read_csv('data/output_data/daily_light_metrics.csv')
-river_metab <- read_csv('data/output_data/usgs_metab_fill_norm.csv') %>% 
-  left_join(.,river_light, by = c('site', 'date'))
+river_metab <- readr::read_csv('data/output_data/good_estimates_2007-2021.csv') 
+
 
 source('code/8_intraannual_variation/calc_intrayear_metrics.R')
 river_intra_metrics <- calc_intrayear_metrics()

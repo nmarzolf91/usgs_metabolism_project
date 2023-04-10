@@ -206,6 +206,29 @@ ggsave(plot = fig_2,
        dpi = 300,
        width = 6, height = 5)
 
+extreme_prod_sites <- lt_cv_df %>%
+  data.frame() %>% 
+  dplyr::filter(source == 'USGS') %>% 
+  dplyr::arrange(lt_mean_GPP) %>% 
+  dplyr::slice(c(which.min(lt_mean_GPP), which.max(lt_mean_GPP))) %>% 
+  dplyr::pull(site)
+
+
+catch_area <- table_s1 %>% 
+  dplyr::mutate(site = paste0('nwis_', `Site Number`))
+
+area_cor_df <-lt_cv_df %>% 
+  dplyr::filter(source == 'USGS') %>% 
+  dplyr::left_join(catch_area, 
+                   by = 'site') 
+
+area_cor <- lm(data = area_cor_df, 
+               lt_cv ~ log10(`Drainage Area (km2)`))
+
+summary(area_cor)
+
+river_metab %>% 
+  filter(site %in% extreme_prod_sites)
 
 
 # 3) calculate trends ----

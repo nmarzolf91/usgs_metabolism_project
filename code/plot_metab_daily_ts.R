@@ -2,18 +2,25 @@
 
 estimates <- readr::read_csv('data/output_data/usgs_metab_fill_norm.csv')
 
+river_light <- readr::read_csv('data/output_data/daily_light_metrics.csv')
+
+
+river_metab_wLight <- estimates %>% 
+  dplyr::left_join(.,
+                   river_light, 
+                   by = c('site', 'date'))
 
 pdf(file = 'usgs_metab_scroll.pdf')
-for(i in 1:length(unique(estimates$site))){
-  site <- estimates$site[i]
+for(i in 1:length(unique(river_metab_wLight$site))){
+  site <- river_metab_wLight$site[i]
   
-  years <- unique(lubridate::year(estimates$date))
+  years <- unique(lubridate::year(river_metab_wLight$date))
   
   for(j in 1:length(years)) {
     
     year <- years[j]
     
-    dat <- estimates %>% 
+    dat <- river_metab_wLight %>% 
       filter(site == !!site,
              lubridate::year(date) %in% year) %>% 
       mutate(GPP_C = GPP_filled/1.25,
@@ -21,21 +28,21 @@ for(i in 1:length(unique(estimates$site))){
     
     metab <- ggplot(dat,
                     aes(x = date))+
-      geom_area(aes(y = shortwave), fill = 'grey')+
-      geom_point(aes(y = GPP_C*10), color = 'darkgreen')+
-      geom_point(aes(y = ER_C*10), color = 'goldenrod4')+
-      scale_y_continuous(name = "Shortwave Radiation",
-                         sec.axis = sec_axis(~./10, 
-                                             name="Metabolism (g C m-2 d-1)"))+
+      geom_area(aes(y = daily_PAR), fill = 'grey')+
+      geom_area(aes(y = GPP_C/1), fill = 'darkgreen')+
+      geom_area(aes(y = ER_C/1), fill = 'goldenrod4')+
+      scale_y_continuous(name = expression(paste("Stream Surface PAR (mol  ", m^-2, " ",d^-1,')')),
+                         sec.axis = sec_axis(~.*1, 
+                                             name = expression(paste("Metabolism (g C ",m^-2," " ,d^-1,")"))))+
       theme(axis.title.x = element_blank(),
             axis.text.x = element_blank())+
-      ggtitle(paste(site, year, sep = '-'))
+      ggtitle(paste(site, year, sep = ' : '))
     
     discharge <- ggplot(dat,
                         aes(x = date,
                             y = discharge))+
-      geom_line()+
-      ylab('Mean Daily Q (m3/s)')+
+      geom_area()+
+      ylab(expression(paste('Mean Daily Discharge (  ',m^3,'/s)')))+
       theme(axis.title.x = element_blank())
     
     final <- cowplot::plot_grid(metab, discharge,

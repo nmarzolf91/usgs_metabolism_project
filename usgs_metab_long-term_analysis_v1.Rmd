@@ -30,6 +30,11 @@ library(ggExtra)
 source("C:/Users/Nick Marzolf/Desktop/Research/R code/theme_nick.R")
 theme_set(theme_nick())
 
+# spatial
+library(sf)
+library(spData)
+
+
 # statistics
 library(lme4)
 library(nlme)
@@ -39,11 +44,15 @@ library(EflowStats)
 library(car)
 library(merTools)
 
-# other
+# reproducability
 library(pander)
 
 # define constants and axis labels
 metab_units_area <- (expression(paste('GPP (g C ', m^-2, ' ',y^-1,')', sep = ' ')))
+
+# quotient to convert GPP from O2 to C
+# g C = g O2 * (1 mol O2/32 g O2) * (2 mol O/1 mol O2) * (1 mol C/1 mol O) * (12 g C/1 mol C)
+rq <- (1/32)*(2/1)*(1/1)*(12/1) 
 ```
 
 # Explore sites
@@ -52,18 +61,40 @@ metab_units_area <- (expression(paste('GPP (g C ', m^-2, ' ',y^-1,')', sep = ' '
 table_s1 <- readr::read_csv('data/data_citation/1_site_info.csv')
 table_s1
 
-fig_s1 <- ggplot(site_dat,
-       aes(x = drain_area_va*2.58999))+ # conver to km2
+table_s1_plot <- table_s1 %>% 
+  sf::st_as_sf(.,
+               coords = c('Longitude', 'Latitude'),
+               crs = 4326)
+
+fig_s1_map <- ggplot()+
+  geom_sf(data = world %>% 
+            dplyr::filter(name_long == 'United States') %>% 
+            sf::st_set_crs(4326),
+          fill = 'white')+
+  geom_sf(data = table_s1_plot)+ 
+  coord_sf(xlim = c(-130, -65), ylim = c(23, 55), expand = FALSE)
+
+
+fig_s1_hist <- ggplot(table_s1,
+                      aes(x = `Drainage Area (km2)`*2.58999))+ # convert to km2
   geom_histogram()+
   labs(x = expression(paste('Watershed area (', km^2,')')),
        y = 'Count')+
   scale_x_log10()
+fig_s1_hist
+
+fig_s1 <- cowplot::plot_grid(fig_s1_map,
+                             fig_s1_hist,
+                             ncol = 2, 
+                             rel_widths = c(2,1),
+                             axis = 'b',
+                             align = 'v')
 fig_s1
 
 ggsave(plot = fig_s1,
        'manuscript/long-term_GPP/figures/fig_s1.png',
-       dpi = 600,
-       width = 3.5, height = 3)
+       dpi = 1200,
+       width = 8, height = 3)
 ```
 
 # Load GPP data
@@ -89,7 +120,7 @@ metab_all_annual <- metab_all_daily %>%
   dplyr::mutate(year = lubridate::year(date)) %>% 
   dplyr::group_by(source, site, year, biome) %>% 
   dplyr::summarise(GPP_ann_C = dplyr::if_else('USGS' %in% source,
-                                              sum(GPP/1.25, na.rm = TRUE),
+                                              sum(GPP*rq, na.rm = TRUE),
                                               sum(GPP, na.rm = TRUE)),
                    GPP_daily_cv = EnvStats::cv(GPP, 
                                                na.rm = TRUE, method = 'l.moments')*100)
@@ -108,8 +139,13 @@ fig_s2 <- ggplot2::ggplot(metab_all_annual,
                                 high = '#40E304')+
   ggplot2::facet_grid(source ~ .)+
   ggplot2::ylab(metab_units_area)+
-  ggplot2::theme(axis.title.x = element_blank())
+  ggplot2::theme(axis.title.x = element_blank(),
+                 legend.position = 'none')
 fig_s2
+
+ggsave(plot = fig_s2,
+       'manuscript/long-term_GPP/figures/fig_s2.png',
+       dpi = 1200, width = 6, height = 6)
 ```
 
 ```{r viz-ann-prod, warning = FALSE, echo = TRUE}
@@ -130,7 +166,8 @@ fig_1_top <- ggplot2::ggplot(data = metab_all_annual,
   ggplot2::theme(axis.title.x = ggplot2::element_blank(),
                  axis.text.x = ggplot2::element_blank(),
                  panel.grid.major = ggplot2::element_blank(), 
-                 panel.grid.minor = ggplot2::element_blank())
+                 panel.grid.minor = ggplot2::element_blank(),
+                 legend.position = 'none')
 fig_1_top
 
 # calculate long term CV
@@ -138,7 +175,8 @@ lt_cv_df <- metab_all_annual %>%
   dplyr::group_by(site, source, biome) %>% 
   dplyr::summarise(lt_mean_GPP = mean(GPP_ann_C, na.rm = TRUE),
                    n_obs = length(GPP_ann_C),
-                   lt_se_GPP = sd(GPP_ann_C, na.rm = TRUE)/n_obs,
+                   lt_sd_GPP = sd(GPP_ann_C, na.rm = TRUE),
+                   lt_se_GPP = lt_sd_GPP/n_obs,
                    lt_cv = lt_mean_GPP/sd(GPP_ann_C, na.rm = TRUE),
                    yr_range = paste(min(year), max(year), sep = '-'))  
 
@@ -149,17 +187,20 @@ lt_cv_df_sub_flux <- data.frame(lt_cv_df) %>%
                 between(row_number(), 1, 5))
 lt_cv_df_sub_flux
 
+
 # ID the 5 most variable river sites
 river_names <- readr::read_csv('data/site_info/nwis_site_info.csv') %>% 
-  dplyr::mutate(site = paste0('nwis_',site_no)) %>% 
-  dplyr::select(site, station_nm)
+  dplyr::mutate(site = paste0('nwis_', site_no)) %>% 
+  dplyr::select(site, station_nm) %>%
+  dplyr::mutate(site_nm = str_sub(station_nm, 0, nchar(station_nm) - 3),
+                state = str_sub(station_nm, -2, -1),
+                clean_name = paste(site_nm, state, sep = ' '))
 
 lt_cv_df_sub_flux_usgs <- data.frame(lt_cv_df) %>% 
-  dplyr::arrange(desc(lt_cv)) %>% 
   dplyr::filter(source == 'USGS') %>% 
+  dplyr::arrange(desc(lt_cv)) %>% 
   dplyr::filter(between(row_number(), 1, 5)) %>% 
-  dplyr::left_join(river_names, 'site') %>% 
-  dplyr::mutate(clean_names = stringr::str_to_title(station_nm, locale = 'en'))
+  dplyr::left_join(river_names, by = 'site')
 lt_cv_df_sub_flux_usgs
 
 # and plot
@@ -188,7 +229,7 @@ fig_1_bottom <- ggplot2::ggplot()+
   ggrepel::geom_label_repel(data = lt_cv_df_sub_flux_usgs,
                             aes(x = 2, 
                                 y = lt_cv,
-                                label = clean_names),
+                                label = clean_name),
                             size = 2,
                             nudge_x = 0.5,
                             nudge_y = c(50,40,30,20,10))+
@@ -208,42 +249,55 @@ fig_1
 
 ggsave(plot = fig_1,
        'manuscript/long-term_GPP/figures/fig_1.png',
-       dpi = 600,
+       dpi = 1200,
        width = 6.5, height = 5)
 ```
 
 ```{r fig-2, warning = FALSE, echo = TRUE}
-fig_2_main <- ggplot(lt_cv_df,
-                     aes(x = lt_mean_GPP,
-                         y = lt_cv,
-                         color = source))+
-  geom_point(size = 1.5)+
-  geom_errorbarh(aes(xmin = lt_mean_GPP - lt_se_GPP,
-                     xmax = lt_mean_GPP + lt_se_GPP))+
-  ggplot2::scale_color_manual(name = element_blank(),
-                              values = c('#855E09','darkblue'))+
-  labs(x = expression(paste("Mean Annual GPP (g C ", m^-2, " ", y^-1, ")", sep = " ")),
-       y = expression(paste(CV[GPP],' (%)')),
-       color = NULL)+
-  #scale_x_log10()+
-  theme(legend.position = c(0.15,0.85),
-        legend.background = element_rect(fill = 'white',
-                                         color = 'black'),
-        legend.margin = margin(-5, 1, 1, 1),
-        legend.spacing = unit(0, 'pt'))
-fig_2_main
+extreme_prod_sites <- lt_cv_df %>%
+  data.frame() %>% 
+  dplyr::filter(source == 'USGS') %>% 
+  dplyr::arrange(lt_mean_GPP) %>% 
+  dplyr::slice(c(which.min(lt_mean_GPP), which.max(lt_mean_GPP))) %>% 
+  dplyr::pull(site)
 
-fig_2 <- ggExtra::ggMarginal(fig_2_main,
-                             type = 'density',
-                             margins = 'both',
-                             groupFill = TRUE,
-                             groupColour = TRUE,
-                             size = 10)
+
+extreme_site_years <- metab_all_annual %>% 
+  dplyr::filter(site %in% extreme_prod_sites) %>% 
+  dplyr::group_by(site) %>% 
+  dplyr::arrange(GPP_ann_C) %>% 
+  dplyr::slice(c(which.min(GPP_ann_C), which.max(GPP_ann_C))) %>% 
+  dplyr::mutate(site_year = paste(site, year, sep = '-'))
+
+extreme_years <- river_metab %>% 
+  dplyr::mutate(site_year = paste(site, lubridate::year(date), sep = '-')) %>% 
+  dplyr::filter(site_year %in% extreme_site_years$site_year) %>% 
+  dplyr::mutate(year = factor(lubridate::year(date)),
+                jday = lubridate::yday(date)) %>% 
+  dplyr::left_join(river_names, 'site') %>% 
+  dplyr::mutate(clean_name_case = stringr::str_to_upper(clean_name, 'en'))
+
+fig_2 <- ggplot(extreme_years,
+                aes(x = jday, 
+                    y = GPP*rq,
+                    color = year))+
+  geom_line(alpha = 0.7)+
+  geom_point()+
+  ggplot2::scale_color_manual(values = c('#40E304','#855E09',
+                                         '#855E09','#40E304'))+
+  facet_grid(clean_name_case ~ .,
+             scales = 'free')+
+  labs(x = 'Day of Year',
+       y = expression(paste('GPP (g C ', m^-2,' ',d^-1,')')))+
+  theme(legend.position = 'none',
+        strip.text = element_text(size = 6),
+        strip.background = element_rect(fill = 'white'))
 fig_2
+
 ggsave(plot = fig_2,
        'manuscript/long-term_GPP/figures/fig_2.png',
-       dpi = 300,
-       width = 6, height = 5)
+       dpi = 1200, 
+       width = 5, height = 6)
 ```
 
 # Productivity trends
@@ -261,7 +315,7 @@ annual_C_sum_trends <- river_metab_ann %>%
                 sens_s = purrr::map_dbl(sens, ~.$estimates),
                 mk_p = purrr::map_dbl(mk_test, ~.$p.value),
                 mk_s = purrr::map_dbl(mk_test, ~.$estimates['S']),
-                sens_sig = ifelse(sens_p <= 0.05,'significant', 'non-significant'),
+                sens_sig = ifelse(sens_p <= 0.05, 'significant', 'non-significant'),
                 sens_slope = ifelse(sens_s > 0, 'increasing', 'decreasing'),
                 mk_sig = ifelse(mk_p <= 0.05, 'significant', 'non-significant'),
                 mk_slope = ifelse(mk_s > 0, 'increasing', 'decreasing')) 
@@ -286,10 +340,11 @@ fig_3 <- ggplot2::ggplot(river_trends,
                          ggplot2::aes(x = year, 
                                       y = GPP_ann_C,
                                       color = sens_slope))+
-  #ggplot2::geom_point(aes(group = site))+
   ggplot2::geom_line(aes(group = site),
                      linewidth = 1.25)+
-  scale_y_log10()+
+  scale_y_log10(limits = c(10, 3000),
+                breaks = c(10,30,100,300,1000,3000),
+                labels = c(10,30,100,300,1000,3000))+
   scale_x_continuous(n.breaks = 10)+
   gghighlight::gghighlight(sens_sig == 'significant',
                            use_direct_label = FALSE,
@@ -297,16 +352,22 @@ fig_3 <- ggplot2::ggplot(river_trends,
                            unhighlighted_params = list(alpha("grey", 0.4),
                                                        linewidth = 0.1))+
   ggplot2::labs(y = metab_units_area)+
-  scale_color_manual(name = 'Trend',
+  scale_color_manual(name = element_blank(),
                      values = c('#855E09','#40E304'),
                      labels = c(glue::glue('Decreasing (n = ', n_sig[1,2],')'),
                                 glue::glue('Increasing (n = ', n_sig[2,2],')')))+
-  theme(axis.title.x = element_blank())
+  theme(axis.title.x = element_blank(),
+        legend.justification = c(0.95,0.025),
+        legend.position = c(0.95, 0.025),
+        legend.text = element_text(size = 10),
+        legend.background = element_rect(color = 'black',
+                                         linewidth = 0.25),
+        legend.margin = margin(0, 2, 0.5, 0.1))
 fig_3
 
 ggsave(plot = fig_3,
        'manuscript/long-term_GPP/figures/fig_3.png',
-       dpi = 600,
+       dpi = 1200,
        width = 6, height = 4)
 
 ```
@@ -329,41 +390,13 @@ river_metab_ann_drivers <- river_metab_wLight %>%
   dplyr::select(date, site, GPP_filled, discharge, daily_PAR, temp.water) %>% 
   dplyr::group_by(site,
                   year = lubridate::year(date)) %>% 
-  dplyr::summarise(GPP_ann_C = sum(GPP_filled/1.25, na.rm = TRUE),         # g C m-2 y-1
-                   Q_ann_mean = mean(discharge,na.rm = TRUE),
+  dplyr::summarise(GPP_ann_C = sum(GPP_filled*rq, na.rm = TRUE),         # g C m-2 y-1
+                   Q_ann_mean = mean(discharge, na.rm = TRUE),
                    Q_ann_cv = EnvStats::cv(discharge, method = 'l.moments'),
                    light_ann_tot = sum(daily_PAR, na.rm = TRUE),
                    temp_ann_mean = mean(temp.water, na.rm = TRUE)) %>%      # mol m-2 y-1
   dplyr::filter(light_ann_tot != 0)  
 
-river_metab_ann_drivers_site <- river_metab_ann_drivers %>% 
-  dplyr::group_by(site) %>% 
-  dplyr::summarise(GPP_mean_ann = mean(GPP_ann_C, na.rm = TRUE),
-                   GPP_sd_ann = sd(GPP_ann_C, na.rm = TRUE),
-                   n_obs = length(GPP_ann_C),
-                   GPP_se_ann = GPP_sd_ann/n_obs,
-                   GPP_cv = EnvStats::cv(GPP_ann_C, method = 'l.moments')*100,
-                   light_ann_mean = mean(light_ann_tot, na.rm = TRUE),
-                   light_ann_cv = EnvStats::cv(light_ann_tot, method = 'l.moments')*100,
-                   discharge_mean = mean(Q_ann_mean, na.rm = TRUE),
-                   discharge_cv = EnvStats::cv(Q_ann_mean, method = 'l.moments')*100,
-                   temp_mean = mean(temp_ann_mean, na.rm = TRUE),
-                   temp_sd = sd(temp_ann_mean, na.rm = TRUE),
-                   temp_se = temp_sd/length(temp_ann_mean),
-                   temp_cv = EnvStats::cv(temp_ann_mean, method = 'l.moments')*100) 
-
-driver_sum <- river_metab_ann_drivers_site %>% 
-  tidyr::pivot_longer(cols = c(light_ann_mean, 
-                               light_ann_cv, 
-                               discharge_mean, 
-                               discharge_cv,
-                               temp_mean,temp_cv),
-                      names_to = 'driver',
-                      values_to = 'value') 
-
-driver_sum$driver <- factor(driver_sum$driver, 
-                            levels = c('light_ann_mean','discharge_mean', 'temp_mean', 
-                                       'light_ann_cv', 'discharge_cv','temp_cv'))
 
 # all 3 drivers
 gpp_mult_reg <- lme4::lmer(data = river_metab_ann_drivers,
@@ -443,6 +476,16 @@ colnames(table_s2) <- c('Site', 'Interaction', 'Light', 'Temperature', 'CVQ')
 
 table_s2
 
+ggplot()+
+  geom_density(data = table_s2,
+               aes(x = Light), color = 'green')+
+  geom_density(data = table_s2,
+               aes(x = Temperature), color = 'red')+
+  geom_density(data = table_s2,
+               aes(x = CVQ), color = 'blue')+
+  geom_density(data = table_s2,
+               aes(x = CVQ), color = 'black')
+
 readr::write_csv(table_s2,
                  'data/data_citation/5_random_effects.csv')
 
@@ -470,30 +513,148 @@ pred_river_metab_ann_drivers <- river_metab_ann_drivers %>%
 
 cond_r2 <- round(performance::performance(gpp_mult_reg)$R2_conditional, 2)
 
+line_1 <- expression(paste('Predicted GPP (g C ', m^-2, ' ',y^-1,')'))  
+line_2 <- expression(paste('GPP ~ MAT + ',CV[Q],' + PAR + (1|site)'))
+
+
 fig_4 <- ggplot(pred_river_metab_ann_drivers,
-                aes(x = GPP_ann_C))+
+                aes(x = intervals$fit))+
   geom_ribbon(aes(ymax = intervals$upr,
                   ymin = intervals$lwr),
               alpha = 0.2)+
-  geom_point(aes(y = intervals$fit))+
+  geom_point(aes(y = GPP_ann_C))+
   geom_abline(slope = 1,
               intercept = 0,
               linetype = 'dashed',
               color = 'black')+
-  labs(x = metab_units_area,
-       y = expression(paste('Predicted GPP (g C ', m^-2, ' ',y^-1,')')))+
-  lims(x = c(0, 4000),
-       y = c(-500, 3000))+
+  labs(x = "",
+       y = expression(paste('Estimated GPP (g C ', m^-2, ' ',y^-1,')')))+
+  lims(x = c(0, 3500),
+       y = c(-500, 3500))+
   annotate('text',
-           x = 3000, y = -400, 
+           x = 2000, y = -400, 
            label = bquote(R[Conditional]^2 == .(cond_r2)))
 fig_4
 
+fig_4 <- cowplot::ggdraw(fig_4)+
+  cowplot::draw_label(line_1, x = 0.55, y = 0.06, size = 12)+
+  cowplot::draw_label(line_2, x = 0.55, y = 0.02, size = 10)
+
 ggsave(plot = fig_4,
        'manuscript/long-term_GPP/figures/fig_4.png',
-       dpi = 600,
+       dpi = 1200,
        width = 5, height = 4)
 
+```
+
+# Are the drivers changing?
+```{r changers, warning=FALSE, echo = TRUE}
+changing_sites <- river_trends %>% 
+  dplyr::filter(sens_sig == 'significant') %>% 
+  dplyr::group_by(site) %>% 
+  dplyr::select(site, sens_slope) %>% 
+  unique()
+
+
+changers_drivers <- river_metab_wLight %>% 
+  dplyr::filter(site %in% changing_sites$site) %>% 
+  group_by(site, year = lubridate::year(date)) %>% 
+  summarise(GPP_ann_C = sum(GPP*rq, na.rm = TRUE),
+            mat = mean(temp.water, na.rm = TRUE),
+            cv_q = EnvStats::cv(discharge, method = 'l.moments'),
+            ann_light = sum(daily_PAR, na.rm = TRUE)) %>% 
+  dplyr::left_join(changing_sites, 'site')
+
+mat_trends <- changers_drivers %>% 
+  dplyr::select(site, year, mat) %>% 
+  dplyr::group_by(site) %>% 
+  tidyr::nest() %>% 
+  dplyr::mutate(sens = purrr::map(data, ~trend::sens.slope(x = .$mat)),
+                mk_test = purrr::map(data, ~trend::mk.test(x = .$mat))) %>% 
+  dplyr::mutate(sens_p = purrr::map(sens, ~.$p.value), 
+                sens_s = purrr::map_dbl(sens, ~.$estimates),
+                mk_p = purrr::map_dbl(mk_test, ~.$p.value),
+                mk_s = purrr::map_dbl(mk_test, ~.$estimates['S']),
+                sens_sig = ifelse(sens_p <= 0.05, 'significant', 'non-significant'),
+                sens_slope = ifelse(sens_s > 0, 'increasing', 'decreasing'),
+                mk_sig = ifelse(mk_p <= 0.05, 'significant', 'non-significant'),
+                mk_slope = ifelse(mk_s > 0, 'increasing', 'decreasing')) 
+
+
+mat_sigs <- mat_trends %>% 
+  dplyr::ungroup() %>% 
+  dplyr::mutate(sens_p = unlist(sens_p)) %>% 
+  dplyr::select(site, sens_sig, sens_slope, sens_s, sens_p)
+
+n_sig_mat <- mat_sigs %>% 
+  dplyr::filter(sens_p <= 0.05) %>% 
+  dplyr::group_by(sens_slope) %>% 
+  summarise(n = n()) %>% 
+  data.frame()
+
+
+cvq_trends <- changers_drivers %>% 
+  dplyr::select(site, year, cv_q) %>% 
+  dplyr::group_by(site) %>% 
+  tidyr::nest() %>% 
+  dplyr::mutate(sens = purrr::map(data, ~trend::sens.slope(x = .$cv_q)),
+                mk_test = purrr::map(data, ~trend::mk.test(x = .$cv_q))) %>% 
+  dplyr::mutate(sens_p = purrr::map(sens, ~.$p.value), 
+                sens_s = purrr::map_dbl(sens, ~.$estimates),
+                mk_p = purrr::map_dbl(mk_test, ~.$p.value),
+                mk_s = purrr::map_dbl(mk_test, ~.$estimates['S']),
+                sens_sig = ifelse(sens_p <= 0.05, 'significant', 'non-significant'),
+                sens_slope = ifelse(sens_s > 0, 'increasing', 'decreasing'),
+                mk_sig = ifelse(mk_p <= 0.05, 'significant', 'non-significant'),
+                mk_slope = ifelse(mk_s > 0, 'increasing', 'decreasing')) 
+
+
+cvq_sigs <- cvq_trends %>% 
+  dplyr::ungroup() %>% 
+  dplyr::mutate(sens_p = unlist(sens_p)) %>% 
+  dplyr::select(site, sens_sig, sens_slope, sens_s, sens_p)
+
+n_sig_cvq <- cvq_trends %>% 
+  dplyr::filter(sens_p <= 0.05) %>% 
+  dplyr::group_by(sens_slope) %>% 
+  summarise(n = n()) %>% 
+  data.frame()
+
+
+light_trends <- changers_drivers %>% 
+  dplyr::select(site, year, ann_light) %>% 
+  dplyr::group_by(site) %>% 
+  tidyr::nest() %>% 
+  dplyr::mutate(sens = purrr::map(data, ~trend::sens.slope(x = .$ann_light)),
+                mk_test = purrr::map(data, ~trend::mk.test(x = .$ann_light))) %>% 
+  dplyr::mutate(sens_p = purrr::map(sens, ~.$p.value), 
+                sens_s = purrr::map_dbl(sens, ~.$estimates),
+                mk_p = purrr::map_dbl(mk_test, ~.$p.value),
+                mk_s = purrr::map_dbl(mk_test, ~.$estimates['S']),
+                sens_sig = ifelse(sens_p <= 0.05, 'significant', 'non-significant'),
+                sens_slope = ifelse(sens_s > 0, 'increasing', 'decreasing'),
+                mk_sig = ifelse(mk_p <= 0.05, 'significant', 'non-significant'),
+                mk_slope = ifelse(mk_s > 0, 'increasing', 'decreasing')) 
+  
+
+table_s3 <- changing_sites %>% 
+  left_join(mat_trends %>% 
+              dplyr::select(site, 
+                            mat_mk_p = mk_p), 
+            'site') %>% 
+  left_join(cvq_trends %>% 
+              dplyr::select(site, 
+                            cvq_mk_p = mk_p), 
+            'site') %>% 
+  left_join(light_trends %>% 
+              dplyr::select(site, 
+                            light_mk_p = mk_p), 
+            'site') %>% 
+  rename(ann_GPP_trend = sens_slope)
+table_s3
+
+readr::write_csv(table_s3,
+                 'data/data_citation/6_table_s3.csv')
 ```
 
 # Session Info
