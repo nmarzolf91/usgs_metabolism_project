@@ -1,4 +1,6 @@
-calc_intrayear_metrics <- function(data = river_metab) {
+calc_intrayear_metrics <- function(data = NULL) {
+  
+  river_metab = river_metab_filled
   
   source('code/8_intraannual_variation/get_seasonality.R')
   source('code/8_intraannual_variation/mag7_fun.R')
@@ -13,7 +15,7 @@ calc_intrayear_metrics <- function(data = river_metab) {
   
   metrics <- matrix('', ncol = 9, nrow = nrow(site_years))
   
-  colnames(metrics) <- c('site', 'year', 'L1', 'tau2', 'tau3', 'tau4', 'amplitude', 'phase', 'ar1')
+  colnames(metrics) <- c('site', 'year', 'mean', 'cv', 'skewness', 'kurtosis', 'amplitude', 'phase', 'ar1')
   
   for(i in 1:nrow(metrics)) {
     site_use <- site_years[i,1]
@@ -25,7 +27,8 @@ calc_intrayear_metrics <- function(data = river_metab) {
     df <- river_metab %>% 
       filter(site == site_use,
              lubridate::year(date) %in% year_use) %>% 
-      select(site, date, GPP_filled) %>% 
+      mutate(GPP_filled_C = GPP_filled*0.75) %>% 
+      select(site, date, GPP_filled_C) %>% 
       data.frame()
     
     if(nrow(df) == 0) {
@@ -34,17 +37,19 @@ calc_intrayear_metrics <- function(data = river_metab) {
     
     l_mom <- lmomco::lmom.ub(df$GPP_filled)
     
-    seasonality <- get_seasonality(timeseries = df, var = 'GPP_filled', standardize = 'yes')
+    seasonality <- get_seasonality(timeseries = df, 
+                                   var = 'GPP_filled_C', 
+                                   standardize = 'yes')
     
-    ar1 <- ar_fun(df, 'GPP_filled')
+    ar1 <- ar_fun(df, 'GPP_filled_C')
     
     
-    metrics[i, 'L1'] = round(l_mom$L1, 2)
-    metrics[i, 'tau2'] = round(l_mom$LCV, 2)
-    metrics[i, 'tau3'] = round(l_mom$TAU3, 2)
-    metrics[i, 'tau4'] = round(l_mom$TAU4, 2)
-    metrics[i, 'amplitude'] = round(seasonality[,'amplitude'], 2)
-    metrics[i, 'phase'] = round(seasonality[,'phase'], 2)
+    metrics[i, 'mean'] = round(l_mom$L1, 4)
+    metrics[i, 'cv'] = round(l_mom$LCV, 4)*100
+    metrics[i, 'skewness'] = round(l_mom$TAU3, 4)
+    metrics[i, 'kurtosis'] = round(l_mom$TAU4, 4)
+    metrics[i, 'amplitude'] = round(seasonality[,'amplitude'], 4)
+    metrics[i, 'phase'] = round(seasonality[,'phase'], 4)
     metrics[i, 'ar1'] = ar1
     
   } # end for loop

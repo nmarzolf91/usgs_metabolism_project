@@ -1,7 +1,7 @@
 ---
 title: 'Data for: Are annual river productivity regimes changing over time?'
 author: "Nick Marzolf"
-date: "2023-03-28"
+date: "2023-05-08"
 output: html_document
 ---
 
@@ -10,11 +10,21 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 # Introduction
-RMarkdown file to accompany []. 
+
+RMarkdown file to accompany: *Are annual river productivity regimes changing over time?,* a manuscript submitted to *Limnology and Oceanography* Special Issue on Changing Phenology in Aquatic Ecosystems.
+
+Authors and affiliations: Nicholas S. Marzolf^1,\*^, Michael J. Vlah^1^, Heili E. Lowman^2^, Weston M. Slaughter^1^, Emily S. Bernhardt^1^
+
+^1^ Department of Biology, Duke University, Durham, NC, USA
+
+^2^ Department of Natural Resources and Environmental Science, University of Nevada, Reno, Reno, Nevada, USA
+
+* Corresponding author: nicholas.marzolf@duke.edu (ORCiD: 0000-0001-9146-1643)
 
 To recreate this HTML, load the data files into a folder named 'Data' at the same path as the .rmd file, open the .rmd file, and click 'Knit'.
 
 # Load packages
+
 ```{r load-packages, echo = TRUE, message = FALSE, warning = FALSE}
 # data manipulation
 library(tidyverse)
@@ -27,8 +37,9 @@ library(tibble)
 library(ggplot2)
 library(ggpubr)
 library(ggExtra)
+library(GGally)
 source("C:/Users/Nick Marzolf/Desktop/Research/R code/theme_nick.R")
-theme_set(theme_nick())
+ggplot2::theme_set(theme_nick())
 
 # spatial
 library(sf)
@@ -56,6 +67,7 @@ rq <- (1/32)*(2/1)*(1/1)*(12/1)
 ```
 
 # Explore sites
+
 ```{r sites, warning = FALSE, echo = TRUE}
 # histogram of watershed areas
 table_s1 <- readr::read_csv('data/data_citation/1_site_info.csv')
@@ -98,14 +110,16 @@ ggsave(plot = fig_s1,
 ```
 
 # Load GPP data
+
 ```{r load-data, warning = FALSE, echo = TRUE}
 
-river_metab <- readr::read_csv('data/output_data/good_estimates_2007-2021.csv') 
-fluxnet_metab <- readr::read_csv('data/output_data/fluxnet_daily_wBiome.csv')
+river_metab <- readr::read_csv('data/data_citation/5_usgs_metabolism.csv') 
+fluxnet_metab <- readr::read_csv('data/data_citation/6_fluxnet_metabolism.csv')
 
 ```
 
 # Calculate Annual Productivity
+
 ```{r calc-annual, warning = FALSE, echo = TRUE}
 
 metab_all_daily <- rbind(river_metab %>% 
@@ -189,9 +203,10 @@ lt_cv_df_sub_flux
 
 
 # ID the 5 most variable river sites
-river_names <- readr::read_csv('data/site_info/nwis_site_info.csv') %>% 
-  dplyr::mutate(site = paste0('nwis_', site_no)) %>% 
-  dplyr::select(site, station_nm) %>%
+river_names <- readr::read_csv('data/data_citation/1_site_info.csv') %>% 
+  dplyr::mutate(site = paste0('nwis_', `Site Number`)) %>% 
+  dplyr::select(site, 
+                station_nm = Name) %>%
   dplyr::mutate(site_nm = str_sub(station_nm, 0, nchar(station_nm) - 3),
                 state = str_sub(station_nm, -2, -1),
                 clean_name = paste(site_nm, state, sep = ' '))
@@ -301,6 +316,7 @@ ggsave(plot = fig_2,
 ```
 
 # Productivity trends
+
 ```{r prod-trends, warning = FALSE, echo = TRUE}
 river_metab_ann <- metab_all_annual %>%
   dplyr::filter(source == 'USGS') 
@@ -373,8 +389,9 @@ ggsave(plot = fig_3,
 ```
 
 # Drivers of annual productivity
+
 ```{r prod-drivers, warning = FALSE, echo = TRUE}
-river_light <- readr::read_csv('data/output_data/daily_light_metrics.csv')
+river_light <- readr::read_csv('data/data_citation/7_river_light.csv')
 
 library(BernhardtMetabolism)
 source('code/functions/fill_and_normalize_metab.R')
@@ -397,15 +414,42 @@ river_metab_ann_drivers <- river_metab_wLight %>%
                    temp_ann_mean = mean(temp.water, na.rm = TRUE)) %>%      # mol m-2 y-1
   dplyr::filter(light_ann_tot != 0)  
 
+# check the normality of inputs data
+hist(river_metab_ann_drivers$GPP_ann_C) # log transform me!
+hist(log10(river_metab_ann_drivers$GPP_ann_C))
+hist(river_metab_ann_drivers$Q_ann_cv)
+hist(river_metab_ann_drivers$temp_ann_mean)
+hist(river_metab_ann_drivers$light_ann_tot)
+
+# check for site-specific outliers
+ggplot(river_metab_ann_drivers, aes(x = site, y = GPP_ann_C))+
+  geom_boxplot()
+
+
+# co-linearity of drivers
+ggpairs(data = river_metab_ann_drivers %>% 
+          dplyr::select(site, Q_ann_cv, light_ann_tot, temp_ann_mean),
+        cardinality_threshold = 47)
+
+
 
 # all 3 drivers
 gpp_mult_reg <- lme4::lmer(data = river_metab_ann_drivers,
-                           GPP_ann_C ~ Q_ann_cv + light_ann_tot + temp_ann_mean + (1|site))
+                           log10(GPP_ann_C) ~ Q_ann_cv + light_ann_tot + temp_ann_mean + (1|site))
+
+# summarise and evaluate outputs
 summary(gpp_mult_reg)
 car::Anova(gpp_mult_reg)
-plot(gpp_mult_reg)
-resid(gpp_mult_reg) %>% 
-  hist()
+
+
+fig_s3_a <- ggplot(data = data.frame(resid(gpp_mult_reg)))+
+  geom_histogram(aes(x = resid.gpp_mult_reg.))+
+  labs(x = 'Residuals',
+       y = 'Count',
+       title = 'Light + CVQ + Temp')
+fig_s3_a
+
+qqnorm(resid(gpp_mult_reg))
 
 ## extract random effects
 mult_ranef <- nlme::ranef(gpp_mult_reg)[[1]] %>% 
@@ -415,15 +459,21 @@ mult_ranef <- nlme::ranef(gpp_mult_reg)[[1]] %>%
                 ranef = X.Intercept.) %>% 
   dplyr::mutate(effect = 'interaction')
 
-
 ## fixed effects
 nlme::fixef(gpp_mult_reg)
 
 
 # light only
 gpp_reg_light <- lme4::lmer(data = river_metab_ann_drivers,
-                            GPP_ann_C ~ light_ann_tot + (1|site))
+                            log10(GPP_ann_C) ~ light_ann_tot + (1|site))
 summary(gpp_reg_light)
+
+fig_s3_b <- ggplot(data = data.frame(resid(gpp_reg_light)))+
+  geom_histogram(aes(x = resid.gpp_reg_light.))+
+  labs(x = 'Residuals',
+       y = 'Count',
+       title = 'Light')
+fig_s3_b
 
 ## light only random effects
 light_ranef <- nlme::ranef(gpp_reg_light)[[1]] %>% 
@@ -436,8 +486,15 @@ light_ranef <- nlme::ranef(gpp_reg_light)[[1]] %>%
 
 # cv Q only
 gpp_reg_cvQ <- lme4::lmer(data = river_metab_ann_drivers,
-                          GPP_ann_C ~ Q_ann_cv + (1|site))
+                          log10(GPP_ann_C) ~ Q_ann_cv + (1|site))
 summary(gpp_reg_cvQ)
+
+fig_s3_c <- ggplot(data = data.frame(resid(gpp_reg_cvQ)))+
+  geom_histogram(aes(x = resid.gpp_reg_cvQ.))+
+  labs(x = 'Residuals',
+       y = 'Count',
+       title = 'CVQ')
+fig_s3_c
 
 ## CV_Q random effects
 cvQ_ranef <- nlme::ranef(gpp_reg_cvQ)[[1]] %>% 
@@ -450,9 +507,19 @@ cvQ_ranef <- nlme::ranef(gpp_reg_cvQ)[[1]] %>%
 
 # temperature only
 gpp_reg_temp <- lme4::lmer(data = river_metab_ann_drivers,
-                           GPP_ann_C ~ temp_ann_mean + (1|site))
+                           log10(GPP_ann_C) ~ temp_ann_mean + (1|site))
 
 summary(gpp_reg_temp)
+
+fig_s3_d <- ggplot(data = data.frame(resid(gpp_reg_temp)))+
+  geom_histogram(aes(x = resid.gpp_reg_temp.))+
+  labs(x = 'Residuals',
+       y = 'Count',
+       title = 'Temp')
+fig_s3_d
+
+
+
 temp_ranef <- nlme::ranef(gpp_reg_temp)[[1]] %>% 
   data.frame() %>% 
   tibble::rownames_to_column() %>% 
@@ -462,6 +529,12 @@ temp_ranef <- nlme::ranef(gpp_reg_temp)[[1]] %>%
 
 
 # compile and compare model outputs
+
+## print residual plots
+ggsave(plot = fig_s3,
+       'manuscript/long-term_GPP/figures/fig_s3.png',
+       dpi = 1200, 
+       width = 5, height = 5)
 
 ## Random effects (ie site-level effects)
 table_s2 <- list(mult_ranef,
@@ -476,33 +549,24 @@ colnames(table_s2) <- c('Site', 'Interaction', 'Light', 'Temperature', 'CVQ')
 
 table_s2
 
-ggplot()+
-  geom_density(data = table_s2,
-               aes(x = Light), color = 'green')+
-  geom_density(data = table_s2,
-               aes(x = Temperature), color = 'red')+
-  geom_density(data = table_s2,
-               aes(x = CVQ), color = 'blue')+
-  geom_density(data = table_s2,
-               aes(x = CVQ), color = 'black')
-
 readr::write_csv(table_s2,
-                 'data/data_citation/5_random_effects.csv')
+                 'data/data_citation/ms_usgs_annual_metab/5_random_effects.csv')
 
 # Compare models by AICw
-performance::compare_performance(gpp_reg_temp,
+table_1 <- performance::compare_performance(gpp_reg_temp,
                                  gpp_reg_cvQ, 
                                  gpp_reg_light,
                                  gpp_mult_reg) 
+table_1
 
 # predict from best model
 pred_river_metab_ann_drivers <- river_metab_ann_drivers %>% 
   dplyr::group_by(site, Q_ann_cv, light_ann_tot, temp_ann_mean) %>% 
   dplyr::summarise(n = n()) %>% 
   dplyr::ungroup() %>% 
-  dplyr::mutate(GPP_ann_C_pred = stats::predict(gpp_mult_reg, 
+  dplyr::mutate(GPP_ann_C_pred = 10^(stats::predict(gpp_mult_reg, 
                                                 river_metab_ann_drivers,
-                                                re.form = ~(1|site)),
+                                                re.form = ~(1|site))),
                 intervals = merTools::predictInterval(gpp_mult_reg,
                                                       level = 0.95,
                                                       newdata = river_metab_ann_drivers,
@@ -514,13 +578,13 @@ pred_river_metab_ann_drivers <- river_metab_ann_drivers %>%
 cond_r2 <- round(performance::performance(gpp_mult_reg)$R2_conditional, 2)
 
 line_1 <- expression(paste('Predicted GPP (g C ', m^-2, ' ',y^-1,')'))  
-line_2 <- expression(paste('GPP ~ MAT + ',CV[Q],' + PAR + (1|site)'))
+line_2 <- expression(paste(log[10],'(GPP) ~ MAT + ',CV[Q],' + PAR + (1|site)'))
 
 
 fig_4 <- ggplot(pred_river_metab_ann_drivers,
-                aes(x = intervals$fit))+
-  geom_ribbon(aes(ymax = intervals$upr,
-                  ymin = intervals$lwr),
+                aes(x = 10^(intervals$fit)))+
+  geom_ribbon(aes(ymax = 10^(intervals$upr),
+                  ymin = 10^(intervals$lwr)),
               alpha = 0.2)+
   geom_point(aes(y = GPP_ann_C))+
   geom_abline(slope = 1,
@@ -529,16 +593,23 @@ fig_4 <- ggplot(pred_river_metab_ann_drivers,
               color = 'black')+
   labs(x = "",
        y = expression(paste('Estimated GPP (g C ', m^-2, ' ',y^-1,')')))+
-  lims(x = c(0, 3500),
-       y = c(-500, 3500))+
+  scale_x_log10(limits = c(50, 3000),
+                breaks = c(50, 100, 500, 1000, 3000),
+                labels = c(50, 100, 500, 1000, 3000))+
+  scale_y_log10(limits = c(30, 5000),
+                breaks = c(30, 100, 1000, 5000),
+                labels = c(30, 100, 1000, 5000))+
+  # lims(x = c(0, 2500),
+  #      y = c(0, 4000))+
   annotate('text',
            x = 2000, y = -400, 
            label = bquote(R[Conditional]^2 == .(cond_r2)))
-fig_4
 
 fig_4 <- cowplot::ggdraw(fig_4)+
   cowplot::draw_label(line_1, x = 0.55, y = 0.06, size = 12)+
   cowplot::draw_label(line_2, x = 0.55, y = 0.02, size = 10)
+
+fig_4
 
 ggsave(plot = fig_4,
        'manuscript/long-term_GPP/figures/fig_4.png',
@@ -548,6 +619,7 @@ ggsave(plot = fig_4,
 ```
 
 # Are the drivers changing?
+
 ```{r changers, warning=FALSE, echo = TRUE}
 changing_sites <- river_trends %>% 
   dplyr::filter(sens_sig == 'significant') %>% 
@@ -654,34 +726,11 @@ table_s3 <- changing_sites %>%
 table_s3
 
 readr::write_csv(table_s3,
-                 'data/data_citation/6_table_s3.csv')
+                 'data/data_citation/ms_usgs_annual_metab/6_table_s3.csv')
 ```
 
 # Session Info
+
 ```{r session-info}
 pander(sessionInfo())
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

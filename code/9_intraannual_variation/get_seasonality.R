@@ -19,8 +19,10 @@ get_seasonality <- function (timeseries, var, standardize) {
                  cos(2 * pi * decimal_year))
   
   seasonfit <- .lm.fit(x_mat, standard)
+  
   b1 <- as.vector(coef(seasonfit)[2])
   b2 <- as.vector(coef(seasonfit)[3])
+  
   amplitude <- round(sqrt((b2^2) + (b1^2)), digits = 2)
   
   MaxDay <- function(b1, b2) {
@@ -41,6 +43,8 @@ get_seasonality <- function (timeseries, var, standardize) {
     else MaxDay
     return(MaxDay)
   }
+  
+  
   phase <- MaxDay(b1, b2)
   get_seasonalityv <- cbind(amplitude, phase)
   return(get_seasonalityv)

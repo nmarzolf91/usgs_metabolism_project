@@ -22,7 +22,6 @@ figures/
 manuscript/
 
 # random code files that aren't ready for publication
-code/metab_plots.R
-code/metab_streamlight.R
 code/metabolism_synthesis
+usgs_metab_scroll.pdf
 
