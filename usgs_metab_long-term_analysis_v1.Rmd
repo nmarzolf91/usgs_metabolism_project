@@ -1,9 +1,16 @@
 ---
+output:
+  pdf_document: default
+  html_document: default
+---
+---
 title: 'Data for: Are annual river productivity regimes changing over time?'
 author: "Nick Marzolf"
 date: "2023-05-08"
 output: html_document
----
+
+
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -11,7 +18,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Introduction
 
-RMarkdown file to accompany: *Are annual river productivity regimes changing over time?,* a manuscript submitted to *Limnology and Oceanography* Special Issue on Changing Phenology in Aquatic Ecosystems.
+RMarkdown file to accompany: *Are annual river productivity regimes changing over time?,* a manuscript submitted to *Limnology and Oceanography: Letters* Special Issue on Changing Phenology in Aquatic Ecosystems.
 
 Authors and affiliations: Nicholas S. Marzolf^1,\*^, Michael J. Vlah^1^, Heili E. Lowman^2^, Weston M. Slaughter^1^, Emily S. Bernhardt^1^
 
@@ -61,6 +68,9 @@ library(pander)
 # define constants and axis labels
 metab_units_area <- (expression(paste('GPP (g C ', m^-2, ' ',y^-1,')', sep = ' ')))
 
+low_p <- '#103801'
+high_p <- '#43fa00'
+
 # quotient to convert GPP from O2 to C
 # g C = g O2 * (1 mol O2/32 g O2) * (2 mol O/1 mol O2) * (1 mol C/1 mol O) * (12 g C/1 mol C)
 rq <- (1/32)*(2/1)*(1/1)*(12/1) 
@@ -72,6 +82,9 @@ rq <- (1/32)*(2/1)*(1/1)*(12/1)
 # histogram of watershed areas
 table_s1 <- readr::read_csv('data/data_citation/1_site_info.csv')
 table_s1
+
+readr::write_csv(table_s1,
+                 'data/data_citation/ms_usgs_annual_metab/table_s1_site_info.csv')
 
 table_s1_plot <- table_s1 %>% 
   sf::st_as_sf(.,
@@ -149,8 +162,8 @@ fig_s2 <- ggplot2::ggplot(metab_all_annual,
   ggplot2::geom_line()+
   ggplot2::geom_point()+
   ggplot2::scale_color_gradient(name = metab_units_area,
-                                low = '#855E09',
-                                high = '#40E304')+
+                                low = low_p,
+                                high = high_p)+
   ggplot2::facet_grid(source ~ .)+
   ggplot2::ylab(metab_units_area)+
   ggplot2::theme(axis.title.x = element_blank(),
@@ -168,17 +181,17 @@ fig_1_top <- ggplot2::ggplot(data = metab_all_annual,
                                                       desc(GPP_ann_C)), 
                                           y = GPP_ann_C,
                                           color = GPP_ann_C))+
-  ggplot2::geom_point()+
+  #ggplot2::geom_point()+
   ggplot2::geom_line()+
   ggplot2::ylab(metab_units_area)+
   ggplot2::facet_wrap(. ~ source,
                       scales = 'free')+
   ggplot2::scale_color_gradient(name = metab_units_area,
-                                low = '#855E09',
-                                high = '#40E304')+
+                                low = low_p,
+                                high = high_p)+
+  ggplot2::labs(x = 'Site')+
   ggplot2::scale_y_log10(limits = c(10, 10000))+
-  ggplot2::theme(axis.title.x = ggplot2::element_blank(),
-                 axis.text.x = ggplot2::element_blank(),
+  ggplot2::theme(axis.text.x = ggplot2::element_blank(),
                  panel.grid.major = ggplot2::element_blank(), 
                  panel.grid.minor = ggplot2::element_blank(),
                  legend.position = 'none')
@@ -203,8 +216,11 @@ lt_cv_df_sub_flux
 
 
 # ID the 5 most variable river sites
-river_names <- readr::read_csv('data/data_citation/1_site_info.csv') %>% 
-  dplyr::mutate(site = paste0('nwis_', `Site Number`)) %>% 
+river_names <- readr::read_csv('data/data_citation/1_site_info.csv')  
+river_names <- river_names %>% 
+  dplyr::mutate(site = ifelse(nchar(river_names$`Site Number`) == 8,
+                              paste0('nwis_', `Site Number`),
+                              paste0('nwis_0', `Site Number`))) %>% 
   dplyr::select(site, 
                 station_nm = Name) %>%
   dplyr::mutate(site_nm = str_sub(station_nm, 0, nchar(station_nm) - 3),
@@ -231,8 +247,8 @@ fig_1_bottom <- ggplot2::ggplot()+
                         method="histodot",
                         binwidth = 3)+
   ggplot2::scale_fill_gradient(name = metab_units_area,
-                               low = '#855E09',
-                               high = '#40E304')+
+                               low = low_p, # #855E09
+                               high = high_p)+ # #40E304
   ggplot2::ylab(expression(paste(CV[GPP],' (%)')))+
   ggrepel::geom_label_repel(data = lt_cv_df_sub_flux,
                             aes(x = 1, 
@@ -259,7 +275,8 @@ fig_1 <- cowplot::plot_grid(fig_1_top,
                             ncol = 1,
                             common.legend = TRUE,
                             align = 'hv',
-                            axis = 'l')
+                            axis = 'l',
+                            labels = 'auto')
 fig_1
 
 ggsave(plot = fig_1,
@@ -298,8 +315,8 @@ fig_2 <- ggplot(extreme_years,
                     color = year))+
   geom_line(alpha = 0.7)+
   geom_point()+
-  ggplot2::scale_color_manual(values = c('#40E304','#855E09',
-                                         '#855E09','#40E304'))+
+  ggplot2::scale_color_manual(values = c(high_p, low_p,
+                                         low_p,high_p))+
   facet_grid(clean_name_case ~ .,
              scales = 'free')+
   labs(x = 'Day of Year',
@@ -340,7 +357,9 @@ annual_C_sum_trends <- river_metab_ann %>%
 annual_C_sum_sigs <- annual_C_sum_trends %>% 
   dplyr::ungroup() %>% 
   dplyr::mutate(sens_p = unlist(sens_p)) %>% 
-  dplyr::select(site, sens_sig, sens_slope, sens_s, sens_p)
+  dplyr::select(site, sens_s, sens_p, sens_sig, sens_slope,
+                mk_p, mk_s, mk_sig, mk_slope)
+
 
 n_sig <- annual_C_sum_sigs %>% 
   dplyr::filter(sens_p <= 0.05) %>% 
@@ -369,7 +388,7 @@ fig_3 <- ggplot2::ggplot(river_trends,
                                                        linewidth = 0.1))+
   ggplot2::labs(y = metab_units_area)+
   scale_color_manual(name = element_blank(),
-                     values = c('#855E09','#40E304'),
+                     values = c(low_p,high_p),
                      labels = c(glue::glue('Decreasing (n = ', n_sig[1,2],')'),
                                 glue::glue('Increasing (n = ', n_sig[2,2],')')))+
   theme(axis.title.x = element_blank(),
@@ -385,6 +404,16 @@ ggsave(plot = fig_3,
        'manuscript/long-term_GPP/figures/fig_3.png',
        dpi = 1200,
        width = 6, height = 4)
+
+table_s2 <- annual_C_sum_sigs %>% 
+  dplyr::select(site, sens_s, sens_p, mk_s,mk_p)
+colnames(table_s2) <- c('Site',
+                        "Sen's Slope",
+                        "Sen's p-value",
+                        "Mann-Kendall S",
+                        "Mann-Kendall p-value")
+readr::write_csv(table_s2,
+                 'data/data_citation/ms_usgs_annual_metab/table_s2_trend_stats.csv')
 
 ```
 
@@ -531,32 +560,38 @@ temp_ranef <- nlme::ranef(gpp_reg_temp)[[1]] %>%
 # compile and compare model outputs
 
 ## print residual plots
+fig_s3 <- cowplot::plot_grid(fig_s3_a,
+                             fig_s3_b,
+                             fig_s3_c,
+                             fig_s3_d,
+                             nrow = 2, ncol = 2)
+
 ggsave(plot = fig_s3,
        'manuscript/long-term_GPP/figures/fig_s3.png',
        dpi = 1200, 
        width = 5, height = 5)
 
 ## Random effects (ie site-level effects)
-table_s2 <- list(mult_ranef,
+table_s3 <- list(mult_ranef,
                  light_ranef,
                  temp_ranef,
                  cvQ_ranef) %>% 
   reduce(rbind) %>% 
   pivot_wider(names_from = effect,
               values_from = ranef)
-table_s2[,-1] <- round(table_s2[,-1], 1)
-colnames(table_s2) <- c('Site', 'Interaction', 'Light', 'Temperature', 'CVQ')
+table_s3[,-1] <- round(table_s3[,-1], 1)
+colnames(table_s3) <- c('Site', 'Interaction', 'Light', 'Temperature', 'CVQ')
 
-table_s2
+table_s3
 
-readr::write_csv(table_s2,
-                 'data/data_citation/ms_usgs_annual_metab/5_random_effects.csv')
+readr::write_csv(table_s3,
+                 'data/data_citation/ms_usgs_annual_metab/table_s3_random_effects.csv')
 
 # Compare models by AICw
 table_1 <- performance::compare_performance(gpp_reg_temp,
-                                 gpp_reg_cvQ, 
-                                 gpp_reg_light,
-                                 gpp_mult_reg) 
+                                            gpp_reg_cvQ, 
+                                            gpp_reg_light,
+                                            gpp_mult_reg) 
 table_1
 
 # predict from best model
@@ -565,8 +600,8 @@ pred_river_metab_ann_drivers <- river_metab_ann_drivers %>%
   dplyr::summarise(n = n()) %>% 
   dplyr::ungroup() %>% 
   dplyr::mutate(GPP_ann_C_pred = 10^(stats::predict(gpp_mult_reg, 
-                                                river_metab_ann_drivers,
-                                                re.form = ~(1|site))),
+                                                    river_metab_ann_drivers,
+                                                    re.form = ~(1|site))),
                 intervals = merTools::predictInterval(gpp_mult_reg,
                                                       level = 0.95,
                                                       newdata = river_metab_ann_drivers,
@@ -707,9 +742,9 @@ light_trends <- changers_drivers %>%
                 sens_slope = ifelse(sens_s > 0, 'increasing', 'decreasing'),
                 mk_sig = ifelse(mk_p <= 0.05, 'significant', 'non-significant'),
                 mk_slope = ifelse(mk_s > 0, 'increasing', 'decreasing')) 
-  
 
-table_s3 <- changing_sites %>% 
+
+table_s4 <- changing_sites %>% 
   left_join(mat_trends %>% 
               dplyr::select(site, 
                             mat_mk_p = mk_p), 
@@ -723,10 +758,10 @@ table_s3 <- changing_sites %>%
                             light_mk_p = mk_p), 
             'site') %>% 
   rename(ann_GPP_trend = sens_slope)
-table_s3
+table_s4
 
-readr::write_csv(table_s3,
-                 'data/data_citation/ms_usgs_annual_metab/6_table_s3.csv')
+readr::write_csv(table_s4,
+                 'data/data_citation/ms_usgs_annual_metab/table_s4_driver_trends.csv')
 ```
 
 # Session Info
