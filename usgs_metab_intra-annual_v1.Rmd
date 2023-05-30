@@ -1,0 +1,22 @@
+---
+title: 'Data for: Are annual river productivity regimes changing over time?'
+author: "Nick Marzolf"
+date: "2023-05-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+RMarkdown file to accompany: *Evaluating the long-term phenological variability of river productivity,* a manuscript submitted to *Limnology and Oceanography* Special Issue on Changing Phenology in Aquatic Ecosystems.
+
+Authors and affiliations: Nicholas S. Marzolf^1,\*^, Michael J. Vlah^1^, Weston M. Slaughter^1^, Emily S. Bernhardt^1^
+
+^1^ Department of Biology, Duke University, Durham, NC, USA
+
+* Corresponding author: nicholas.marzolf@duke.edu (ORCiD: 0000-0001-9146-1643)
+
+To recreate this HTML, load the data files into a folder named 'Data' at the same path as the .rmd file, open the .rmd file, and click 'Knit'.
