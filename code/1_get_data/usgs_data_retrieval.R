@@ -3,7 +3,7 @@ library(tidyverse)
 library(mda.streams)
 
 # list of target sites
-site_list <- read.csv("./data/sites/sites.csv")
+site_list <- read.csv("./data/site_codes.csv")
 site_list <- site_list[,2]
 
 # names of target varibales for mda.streams function
