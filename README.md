@@ -1,8 +1,3 @@
----
-editor_options: 
-  markdown: 
-    wrap: 72
----
 
 # Title of dataset: Estimates of ecosystem metabolism for 59 rivers in North America, 2008-2021
 
