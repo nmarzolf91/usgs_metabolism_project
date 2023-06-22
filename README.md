@@ -1,32 +1,14 @@
-
 # Title of dataset: Estimates of ecosystem metabolism for 59 rivers in North America, 2008-2021
 
-This dataset is companion with the github repository
-<https://github.com/nmarzolf91/usgs_metabolism_project> that accesses
-USGS water quality and hydrologic data to estimate ecosystem metabolism
-in 59 rivers across the US from 2007-2021. Contained in this data
-citation are information about sites, raw time-series data at sub-daily
-intervals, prepared time series for modeling metabolism, metabolism
-outputs in raw form, processed and QAQC'd metabolism estimates, and
-supplementary information for the associated manuscript(s).
+This dataset is companion with the github repository <https://github.com/nmarzolf91/usgs_metabolism_project> that accesses USGS water quality and hydrologic data to estimate ecosystem metabolism in 59 rivers across the US from 2007-2021. Contained in this data citation are information about sites, raw time-series data at sub-daily intervals, prepared time series for modeling metabolism, metabolism outputs in raw form, processed and QAQC'd metabolism estimates, and supplementary information for the associated manuscript(s).
 
 ## Description of the data and file structure
 
--   1_site_info.csv Number of variables: 5 Variable list: Site Number:
-    USGS code for gage station Name: USGS name for site Latitude: site
-    latitude, in dd.ddd Longitude: site longitude, in dd.ddd Drainage
-    Areak (km2): drainage area upstream of the gage station, in sq. km
+-   1_site_info.csv Number of variables: 5 Variable list: Site Number: USGS code for gage station Name: USGS name for site Latitude: site latitude, in dd.ddd Longitude: site longitude, in dd.ddd Drainage Areak (km2): drainage area upstream of the gage station, in sq. km
 
--   2_timeseries_raw.zip In this folder are two sources of the sensor
-    data. Data collected from 2007-2016 are stored in
-    usgs_from_streampulse_old, and data collected from 2017-2021 are
-    stored in one csv file, usgs_data_2017-2021. The type of data are
-    exactly the same, but the difference is due to who and when the data
-    were aggregated and how the data were accessed, described in the
-    manuscript for this dataset.
+-   2_timeseries_raw.zip In this folder are two sources of the sensor data. Data collected from 2007-2016 are stored in usgs_from_streampulse_old, and data collected from 2017-2021 are stored in one csv file, usgs_data_2017-2021. The type of data are exactly the same, but the difference is due to who and when the data were aggregated and how the data were accessed, described in the manuscript for this dataset.
 
-    -   2_timeseries_raw/usgs_data_2017_2021.csv : high-frequency river
-        data from USGS NWIS sites, collected 2017-2021.
+    -   2_timeseries_raw/usgs_data_2017_2021.csv : high-frequency river data from USGS NWIS sites, collected 2017-2021.
 
         -   Number of variables: 6
 
@@ -42,15 +24,11 @@ supplementary information for the associated manuscript(s).
 
             -   doobs: dissolved oxygen concentration, in mg/L
 
-    -   2_usgs_from_streampulse_old/: folder containing high-frequency
-        river data from USGS NWIS sites, collected 2007 -- 2016
+    -   2_usgs_from_streampulse_old/: folder containing high-frequency river data from USGS NWIS sites, collected 2007 -- 2016
 
         -   Number of files: 63
 
-        -   Naming convention:
-            nwis\_{site_code}\_{startDate}\_{endDate}.csv, where each
-            file contains the entire record of data for a given site
-            from 2007-2016
+        -   Naming convention: nwis\_{site_code}\_{startDate}\_{endDate}.csv, where each file contains the entire record of data for a given site from 2007-2016
 
         -   Number of variables in each file: 7
 
@@ -58,32 +36,23 @@ supplementary information for the associated manuscript(s).
 
             -   DateTime_UTC: Timestamp of each measurement, in UTC
 
-            -   Region: Two character string for region description in
-                StreamPulse portal
+            -   Region: Two character string for region description in StreamPulse portal
 
             -   Site: USGS site code
 
             -   Value: value of variable defined in variable column
 
-            -   Variable: one of DO_mgL, Depth_m, Discharge_m3s,
-                Light_PAR, WaterTemp_C, satDO_mgL
+            -   Variable: one of DO_mgL, Depth_m, Discharge_m3s, Light_PAR, WaterTemp_C, satDO_mgL
 
-            -   Flagtype: indicates potentially bad data, identified
-                visually
+            -   Flagtype: indicates potentially bad data, identified visually
 
-            -   Flagcomment: additional notes describing why a flagtype
-                was added
+            -   Flagcomment: additional notes describing why a flagtype was added
 
--   3_usgs_sm_ready_all: this folder contains the merged form of the
-    data in 2_timeseries_raw and modified to be directly input into
-    streamMetabolizer models using the required format
+-   3_usgs_sm_ready_all: this folder contains the merged form of the data in 2_timeseries_raw and modified to be directly input into streamMetabolizer models using the required format
 
     -   Number of files: 59
 
-    -   Naming convention:
-        nwis\_{site_code}\_{startDate}\_{endDate}.csv, here each file
-        contains the entire record of data for a given site from
-        2007-2021
+    -   Naming convention: nwis\_{site_code}\_{startDate}\_{endDate}.csv, here each file contains the entire record of data for a given site from 2007-2021
 
     -   Number of variables in each file: 8
 
@@ -101,23 +70,15 @@ supplementary information for the associated manuscript(s).
 
         -   discharge: discharge, in m3/s
 
--   4_model_run_bayes: this directory contains the raw model outputs
-    from streamMetabolizer, storing various outputs of the model in
-    separate directories. The estimates, error, confidence intervals,
-    Bayesian measures of model convergence of daily GPP, ER, and K600
-    are available in daily/, model-wide fit, predicted DO
-    concentrations, gas exchange scaling relationships, and diagnostics
-    of models are available in this directory. Processed and usable
-    forms of the data are presented in data citation
-    5_usgs_metabolism.csv, and the relevant parameters are described in
-    detail below.
+        -   light, in umol m-2 s-1
+
+-   4_model_run_bayes: this directory contains the raw model outputs from streamMetabolizer, storing various outputs of the model in separate directories. The estimates, error, confidence intervals, Bayesian measures of model convergence of daily GPP, ER, and K600 are available in daily/, model-wide fit, predicted DO concentrations, gas exchange scaling relationships, and diagnostics of models are available in this directory. Processed and usable forms of the data are presented in data citation 5_usgs_metabolism.csv, and the relevant parameters are described in detail below.
 
     -   daily
 
         -   Number of files: 854
 
-        -   Naming convention:
-            nwis\_{sitecode}\_{startdate}*\_*{enddate}\_daily.csv
+        -   Naming convention: nwis\_{sitecode}\_{startdate}*\_*{enddate}\_daily.csv
 
         -   Number of variables in each file: 74
 
@@ -125,8 +86,7 @@ supplementary information for the associated manuscript(s).
 
         -   Number of files: 853
 
-        -   Naming convention:
-            nwis\_{sitecode}\_{startdate}\_{enddate}\_datadaily.csv
+        -   Naming convention: nwis\_{sitecode}\_{startdate}\_{enddate}\_datadaily.csv
 
         -   Number of variables in each file: 7
 
@@ -142,8 +102,7 @@ supplementary information for the associated manuscript(s).
 
         -   Number of files: 853
 
-        -   Naming convention:
-            nwis\_{sitecode}\_{startdate}\_{enddate}*\_*KQ_overall.csv
+        -   Naming convention: nwis\_{sitecode}\_{startdate}\_{enddate}*\_*KQ_overall.csv
 
         -   Number of variables in each file: 13
 
@@ -151,8 +110,7 @@ supplementary information for the associated manuscript(s).
 
         -   Number of files: 845
 
-        -   Naming convention:
-            nwis\_{sitecode}\_{startdate}\_{enddate}\_mod_and_obs_DO.csv
+        -   Naming convention: nwis\_{sitecode}\_{startdate}\_{enddate}\_mod_and_obs_DO.csv
 
         -   Number of variables in each file: 9
 
@@ -160,8 +118,7 @@ supplementary information for the associated manuscript(s).
 
         -   Number of files: 853
 
-        -   Naming convention:
-            nwis\_{sitecode}\_{startdate}\_{enddate}\_overall.csv
+        -   Naming convention: nwis\_{sitecode}\_{startdate}\_{enddate}\_overall.csv
 
         -   Number of variables: 33
 
@@ -169,13 +126,11 @@ supplementary information for the associated manuscript(s).
 
         -   Number of files: 853
 
-        -   Naming convention:
-            nwis\_{sitecode}\_{startdate}\_{enddate}\_specs.csv
+        -   Naming convention: nwis\_{sitecode}\_{startdate}\_{enddate}\_specs.csv
 
         -   Number of variables: 1
 
-    -   diagnostics.csv: For each site year, descriptive statistics that
-        inform how well the model fit.
+    -   diagnostics.csv: For each site year, descriptive statistics that inform how well the model fit.
 
         -   Number of variables: 13
 
@@ -189,29 +144,21 @@ supplementary information for the associated manuscript(s).
 
             -   resolution: sampling frequency of the input sensor data
 
-            -   K600_daily_sigma_Rhat: Gelman-Rubin convergence
-                statistics for K600
+            -   K600_daily_sigma_Rhat: Gelman-Rubin convergence statistics for K600
 
-            -   err_obs_iid_sigma_Rhat: observation error convergence
-                statistic
+            -   err_obs_iid_sigma_Rhat: observation error convergence statistic
 
-            -   err_proc_iid_sigma_Rhat: process error convergence
-                statistics
+            -   err_proc_iid_sigma_Rhat: process error convergence statistics
 
             -   K_median: median daily gas exchange
 
-            -   K_range: range of gas exchange estimated for the given
-                site year
+            -   K_range: range of gas exchange estimated for the given site year
 
-            -   neg_GPP: % days with negative GPP estimates (\<-0.5 g O2
-                m-2 d-1)
+            -   neg_GPP: % days with negative GPP estimates (\<-0.5 g O2 m-2 d-1)
 
-            -   pos_ER: % days with positive ER estimates (\>0.5 g O2
-                m-2 d-1)
+            -   pos_ER: % days with positive ER estimates (\>0.5 g O2 m-2 d-1)
 
-            -   ER_K\_r2: linear R2 between daily ER and K600, where
-                high correlation between variables suggest poor model
-                convergence
+            -   ER_K\_r2: linear R2 between daily ER and K600, where high correlation between variables suggest poor model convergence
 
 -   5_usgs_metabolism.csv
 
@@ -315,16 +262,64 @@ supplementary information for the associated manuscript(s).
 
         -   daily_LAI: daily leaf area index
 
-        -   daily_PAR: total daily photosynthetically active radiation
-            incident at the river surface
+        -   daily_PAR: total daily photosynthetically active radiation incident at the river surface
+
+-   ms_usgs_annual_metab: these files are supplementary tables for the submitted manuscript
+
+    -   table_s1_site_info: identical to 1_site_info.csv
+
+    -   table_s2_trend_stats.csv
+
+        -   Number of variables: 5
+
+        -   Variable list
+
+            -   site: nwis\_{sitecode}
+
+            -   Sen's Slope: monotonic slope of annual metabolism by site
+
+            -   Sen's pvalue: pvalue associated with Sen's Slope
+
+            -   Mann-Kendall S: test statistic for Mann-Kendall test
+
+            -   Mann-Kendall p-value: p-value associated with Mann-Kendall test
+
+    -   table_s3_random_effects.csv
+
+        -   Number of variables: 5
+
+        -   Variable list:
+
+            -   site: nwis\_{sitecode}
+
+            -   Interaction: fixed effect value
+
+            -   Light: fixed effect for light
+
+            -   Temperature: fixed effect for temperature
+
+            -   CVQ: fixed effect for flow variability
+
+    -   table_s4_driver_trends.csv
+
+        -   Number of variables: 5
+
+        -   Variable list
+
+            -   site: nwis\_{sitecode}
+
+            -   ann_GPP_trend: character, is annual GPP increasing or decreasing
+
+            -   mat_mk_p: Mann-Kendall p-value for mean annual temperature
+
+            -   cv_q\_p: Mann-Kendall p-value for flow variability
+
+            -   light_mk_p: Mann-Kendall p-value for total incident light
 
 ## Sharing/Access information
 
-Code and some data available at
-<https://github.com/nmarzolf91/usgs_metabolism_project> Data available
-on dryad at: <https://doi.org/10.5061/dryad.bcc2fqzj2>
+Code and some data available at <https://github.com/nmarzolf91/usgs_metabolism_project> Data available on dryad at: <https://doi.org/10.5061/dryad.bcc2fqzj2>
 
 ## Code/Software
 
-R version 4.2.3 with various packages, including streamMetabolizer
-v0.12.0 and dataRetrieval v2.7.12
+R version 4.2.3 with various packages, including streamMetabolizer v0.12.0 and dataRetrieval v2.7.12
