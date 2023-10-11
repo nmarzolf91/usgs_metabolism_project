@@ -235,8 +235,8 @@ fig_1
 
 if(save_figs){
   ggsave(plot = fig_1,
-         glue::glue(fig_dir, 'fig_1_small.png'),
-         dpi = 300, width = 13, height = 12)
+         glue::glue(fig_dir, 'fig_1.png'),
+         dpi = 1200, width = 13, height = 12)
 }
 
 ```
@@ -296,7 +296,11 @@ fig_2
 if(save_figs){
   ggsave(plot = fig_2,
          glue::glue(fig_dir, 'fig_2.png'),
+<<<<<<< HEAD
          dpi = 850,
+=======
+         dpi = 1000,
+>>>>>>> 8781f6f41f93ea6feea8077c199ec6b153c4d917
          width = 11, height = 4.5)
 }
 ```
