@@ -158,7 +158,7 @@ This dataset is companion with the github repository <https://github.com/nmarzol
 
             -   pos_ER: % days with positive ER estimates (\>0.5 g O2 m-2 d-1)
 
-            -   ER_K\_r2: linear R2 between daily ER and K600, where high correlation between variables suggest poor model convergence
+            -   ER_K_r2: linear R2 between daily ER and K600, where high correlation between variables suggest poor model convergence
 
 -   5_usgs_metabolism.csv
 
@@ -312,7 +312,7 @@ This dataset is companion with the github repository <https://github.com/nmarzol
 
             -   mat_mk_p: Mann-Kendall p-value for mean annual temperature
 
-            -   cv_q\_p: Mann-Kendall p-value for flow variability
+            -   cv_q_p: Mann-Kendall p-value for flow variability
 
             -   light_mk_p: Mann-Kendall p-value for total incident light
 
