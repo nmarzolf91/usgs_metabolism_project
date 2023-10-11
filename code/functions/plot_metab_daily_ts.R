@@ -12,6 +12,7 @@ river_metab_wLight <- estimates %>%
 
 pdf(file = 'usgs_metab_scroll.pdf')
 for(i in 1:length(unique(river_metab_wLight$site))){
+  
   site <- river_metab_wLight$site[i]
   
   years <- unique(lubridate::year(river_metab_wLight$date))
@@ -21,21 +22,24 @@ for(i in 1:length(unique(river_metab_wLight$site))){
     year <- years[j]
     
     dat <- river_metab_wLight %>% 
-      filter(site == !!site,
-             lubridate::year(date) %in% year) %>% 
-      mutate(GPP_C = GPP_filled/1.25,
-             ER_C = ER_filled/1.25)
+      dplyr::filter(site == !!site,
+                    lubridate::year(date) %in% year) %>% 
+      dplyr::mutate(GPP_C = GPP_filled/1.25,
+                    ER_C = ER_filled/1.25)
     
     metab <- ggplot(dat,
                     aes(x = date))+
-      geom_area(aes(y = daily_PAR), fill = 'grey')+
+      #geom_area(aes(y = daily_PAR), fill = 'grey')+
       geom_area(aes(y = GPP_C/1), fill = 'darkgreen')+
       geom_area(aes(y = ER_C/1), fill = 'goldenrod4')+
-      scale_y_continuous(name = expression(paste("Stream Surface PAR (mol  ", m^-2, " ",d^-1,')')),
-                         sec.axis = sec_axis(~.*1, 
-                                             name = expression(paste("Metabolism (g C ",m^-2," " ,d^-1,")"))))+
-      theme(axis.title.x = element_blank(),
-            axis.text.x = element_blank())+
+      # scale_y_continuous(name = expression(paste("Stream Surface PAR (mol  ", m^-2, " ",d^-1,')')),
+      #                    sec.axis = sec_axis(~.*1, 
+      #                                        name = expression(paste("Metabolism (g C ",m^-2," " ,d^-1,")"))))+
+      theme(
+        axis.title.x = element_blank(),
+        #axis.text.x = element_blank()
+      )+
+      labs(y = expression(paste("Metabolism (g C ",m^-2," " ,d^-1,")")))+
       ggtitle(paste(site, year, sep = ' : '))
     
     discharge <- ggplot(dat,
@@ -49,7 +53,7 @@ for(i in 1:length(unique(river_metab_wLight$site))){
                                 ncol = 1, nrow = 2,
                                 align = 'v',
                                 rel_heights = c(2,1))
-
+    
     print(final)
   }
 }

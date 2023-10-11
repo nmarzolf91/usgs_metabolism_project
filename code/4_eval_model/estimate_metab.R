@@ -131,14 +131,18 @@ estimate_metab <- function(model_dir = 'data/model_runs/bayes_all/') {
       select(site, resolution, date, GPP, GPP.lower, GPP.upper, GPP.n_eff, GPP.Rhat,
              ER, ER.lower, ER.upper, ER.n_eff, ER.Rhat, K600, K600.lower, K600.upper,
              K600.n_eff, K600.Rhat, DO.obs, DO.sat, DO.amp, DO.psat, depth, temp.water,
-             discharge, shortwave)
+             discharge, shortwave) %>% 
+      filter(K600.Rhat <= 1.2, 
+             ER.Rhat <= 1.2, 
+             GPP.Rhat <= 1.2)
     
     write_csv(merged,
               glue('data/model_runs/bayes_all/estimates/{site}_{year}.csv'))
     
   }
   
-  estimates <- map_dfr(list.files(glue(model_dir, 'estimates'), full.names = TRUE),
+  estimates <- map_dfr(list.files(glue(model_dir, 'estimates'), 
+                                  full.names = TRUE),
                        read_csv)
   
   write_csv(estimates,

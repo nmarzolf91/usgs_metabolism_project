@@ -172,7 +172,7 @@ fig_s2
 
 ggsave(plot = fig_s2,
        'manuscript/long-term_GPP/figures/fig_s2.png',
-       dpi = 1200, width = 6, height = 6)
+       dpi = 1200, width = 6, height = 4)
 ```
 
 ```{r viz-ann-prod, warning = FALSE, echo = TRUE}
@@ -281,7 +281,7 @@ fig_1
 
 ggsave(plot = fig_1,
        'manuscript/long-term_GPP/figures/fig_1.png',
-       dpi = 1200,
+       dpi = 1000,
        width = 6.5, height = 5)
 ```
 
@@ -328,7 +328,7 @@ fig_2
 
 ggsave(plot = fig_2,
        'manuscript/long-term_GPP/figures/fig_2.png',
-       dpi = 1200, 
+       dpi = 1000, 
        width = 5, height = 6)
 ```
 
