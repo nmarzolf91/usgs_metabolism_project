@@ -1,0 +1,612 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
+------------------------------------------------------------------------
+
+# Data for: Is the short-term phenology and long-term trajectory of river productivity changing over time?
+
+## Nick Marzolf, 2024-01-29
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+RMarkdown file to accompany: Is the short-term phenology and long-term trajectory of river productivity changing over time?, a manuscript submitted to Limnology and Oceanography: Letters Special Issue: "Changing Phenology in Aquatic Ecosystems".
+
+Nicholas S. Marzolf^1,\*^, Michael J. Vlah^1^, Heili E. Lowman^2^, Weston M. Slaughter^1^, Emily S. Bernhardt^1^
+
+Affiliations
+
+^1^ Department of Biology, Duke University, Durham, NC, USA
+
+^2^ Department of Natural Resources and Environmental Science, University of Nevada, Reno, Reno, Nevada, USA
+
+\*corresponding author: [nick.marzolf\@jonesctr.org](mailto:nick.marzolf@jonesctr.org){.email} (ORCiD: 0000-0001-9146-1643)
+
+To recreate this HTML, load the data files into a folder named 'data' at the same path as the .rmd file, open the .rmd file, and click 'Knit'.
+
+# Load packages
+
+```{r load-packages, echo = TRUE, message = FALSE, warning = FALSE}
+# data manipulation
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+library(purrr)
+library(tibble)
+library(broom)
+
+# plotting
+library(ggplot2)
+library(ggpubr)
+library(ggExtra)
+library(GGally)
+library(gghighlight)
+source("code/theme_nick.R")
+ggplot2::theme_set(theme_nick())
+
+# spatial
+library(sf)
+library(spData)
+
+# statistics
+library(lme4)
+library(nlme)
+library(performance)
+library(EnvStats)
+library(EflowStats)
+library(car)
+library(trend)
+library(merTools)
+
+# reproducability
+library(pander)
+```
+
+```{r define-constants, echo=TRUE, message=FALSE, warning=FALSE}
+# define constants and axis labels
+metab_units_area <- (expression(paste('GPP (g C ', m^-2, ' ',y^-1,')', sep = ' ')))
+
+low_p <- '#103801'
+high_p <- '#43fa00'
+
+# quotient to convert GPP from O2 to C
+# g C = g O2 * (1 mol O2/32 g O2) * (2 mol O/1 mol O2) * (1 mol C/1 mol O) * (12 g C/1 mol C)
+rq <- (1/32)*(2/1)*(1/1)*(12/1) 
+
+# where to save figures
+save_figs <- FALSE
+
+dpi <- 1200
+
+version <- 'v3'
+
+fig_dir <- glue::glue('manuscript/long-term_GPP/figures/{version}/')
+
+if(!dir.exists(fig_dir)){
+  dir.create(fig_dir)
+}
+```
+
+# Explore sites- MOVE ME DOWN
+
+```{r sites, warning = FALSE, echo = TRUE}
+# histogram of watershed areas
+table_s1 <- readr::read_csv('data/data_citation/1_site_info.csv')
+table_s1
+
+readr::write_csv(table_s1,
+                 'data/data_citation/ms_usgs_annual_metab/table_s1_site_info.csv')
+
+table_s1_plot <- table_s1 %>% 
+  sf::st_as_sf(.,
+               coords = c('Longitude', 'Latitude'),
+               crs = 4326)
+
+fig_s1_map <- ggplot()+
+  geom_sf(data = world %>% 
+            dplyr::filter(name_long == 'United States') %>% 
+            sf::st_set_crs(4326),
+          fill = 'white')+
+  geom_sf(data = table_s1_plot)+
+  # geom_sf_label(data = table_s1_plot,
+  #              aes(label = `Clean Name`),
+  #              check_overlap = TRUE)+
+  coord_sf(xlim = c(-130, -65), ylim = c(23, 55), expand = FALSE)
+
+
+fig_s1_hist <- ggplot(table_s1,
+                      aes(x = `Drainage Area (km2)`*2.58999))+ # convert to km2
+  geom_histogram()+
+  labs(x = expression(paste('Watershed area (', km^2,')')),
+       y = 'Count')+
+  scale_x_log10()
+fig_s1_hist
+```
+
+```{r fig-s1, fig.width = 9, fig.height = 4}
+fig_s1 <- cowplot::plot_grid(fig_s1_map,
+                             fig_s1_hist,
+                             ncol = 2, 
+                             rel_widths = c(2,1),
+                             axis = 'b',
+                             align = 'v')
+fig_s1
+
+if(save_figs){
+  ggsave(plot = fig_s1,
+         glue::glue(fig_dir, 'fig_s1.png'),
+         dpi = dpi,
+         width = 8.5, height = 3)
+}
+```
+
+# Load GPP data
+
+```{r load-data, warning = FALSE, echo = TRUE}
+
+# modified function from 'code/metabolism_synthesis/Part II- Filtering and gap filling.Rmd
+source('code/functions/fill_and_normalize_metab.R')
+
+river_metab <- readr::read_csv('data/data_citation/5_usgs_metabolism.csv') 
+river_metab_filled <- fill_and_normalize_metab(river_metab)
+
+head(river_metab_filled)
+
+n_obs <- length(river_metab_filled$GPP_filled)
+
+n_sites <- length(unique(river_metab_filled$site))
+
+```
+
+# 1) Calculate cumulative daily GPP and total annual GPP
+
+```{r GPP-cumsum, warning = FALSE, echo = TRUE}
+
+# calculate site-year cumulative GPP
+river_metab_cumsum <- river_metab_filled %>% 
+  dplyr::mutate(year = lubridate::year(date)) %>% 
+  dplyr::group_by(site, year) %>% 
+  dplyr::mutate(jday = lubridate::yday(date),
+                GPP_C_cumsum = cumsum(GPP_filled*rq)) 
+
+# calculate annual GPP for each site-year
+metab_all_annual <- river_metab_filled %>% 
+  dplyr::mutate(year = lubridate::year(date)) %>% 
+  dplyr::group_by(site, year) %>% 
+  dplyr::summarise(GPP_daily_mean = mean(GPP_filled*rq, na.rm = TRUE),
+                   GPP_ann_sum = sum(GPP_filled*rq, na.rm = TRUE),
+                   GPP_daily_cv = EnvStats::cv(GPP_filled*rq, 
+                                               na.rm = TRUE, 
+                                               method = 'l.moments')*100,
+                   Q_daily_mean  = mean(discharge, na.rm = TRUE),
+                   Q_daily_cv = EnvStats::cv(discharge,
+                                             na.rm = TRUE,
+                                             method = 'l.moments')*100,
+                   temp_daily_mean = mean(temp.water, na.rm = TRUE),
+                   temp_daily_cv = EnvStats::cv(temp.water,
+                                                na.rm = TRUE,
+                                                method = 'l.moments')*100) %>% 
+  dplyr::mutate(clean_site_num = as.numeric(substr(site, 6,30))) %>% 
+  dplyr::left_join(table_s1 %>% 
+                     rename(clean_site_num = `Site Number`) , 
+                   'clean_site_num')
+summary(metab_all_annual$GPP_ann_C)
+
+
+# plot of annual productivity time-series
+fig_s2 <- ggplot2::ggplot(metab_all_annual,
+                          aes(x = year,
+                              y = GPP_ann_sum,
+                              group = site,
+                              color = GPP_ann_sum))+
+  ggplot2::geom_line()+
+  ggplot2::geom_point()+
+  ggplot2::scale_color_gradient(name = metab_units_area,
+                                low = low_p,
+                                high = high_p)+
+  ggplot2::ylab(metab_units_area)+
+  ggplot2::theme(axis.title.x = element_blank(),
+                 legend.position = 'none')+
+  scale_y_continuous(limits = c(0 , 4000))
+fig_s2
+
+if(save_figs){
+  ggsave(plot = fig_s2,
+         glue::glue(fig_dir,'fig_s2.png'),
+         dpi = dpi, 
+         width = 6, height = 4)
+}
+
+
+
+# calculate median annual and CV for each site time series
+site_mean_ann_gpp <- metab_all_annual %>% 
+  dplyr::group_by(site) %>% 
+  dplyr::summarise(median_ann_GPP = median(GPP_ann_sum, na.rm = TRUE),
+                   sd_ann_GPP = sd(GPP_ann_sum, na.rm = TRUE),
+                   min_ann_GPP = min(GPP_ann_sum, na.rm = TRUE),
+                   max_ann_GPP = max(GPP_ann_sum, na.rm = TRUE),
+                   GPP_percent_diff = ((max_ann_GPP - min_ann_GPP)/min_ann_GPP)*100,
+                   GPP_ann_cv = EnvStats::cv(GPP_ann_sum, na.rm = TRUE, method = 'l.moments')*100,
+                   mean_ann_temp = mean(temp_daily_mean, na.rm = TRUE),
+                   mean_sd_temp = sd(temp_daily_mean, na.rm = TRUE),
+                   cv_mean_temp = EnvStats::cv(temp_daily_mean, method = 'l.moments')*100,
+                   median_ann_discharge = median(Q_daily_mean, na.rm = TRUE),
+                   median_sd_discharge = sd(Q_daily_mean, na.rm = TRUE),
+                   cv_median_discharge = EnvStats::cv(Q_daily_mean, na.rm = TRUE, method = 'l.moments')*100) %>% 
+  dplyr::arrange(desc(max_ann_GPP)) %>% 
+  dplyr::mutate(clean_site_num = as.numeric(substr(site, 6,30))) %>% 
+  dplyr::left_join(table_s1 %>% 
+                     rename(clean_site_num = `Site Number`) , 
+                   'clean_site_num')
+
+```
+
+```{r fig-1, fig.width=15, fig.height=15}
+# cumulative site-year GPP
+river_metab_cumsum_names <- river_metab_cumsum %>% 
+  dplyr::mutate(clean_site_num = as.numeric(substr(site, 6,30))) %>% 
+  dplyr::left_join(table_s1 %>% 
+                     rename(clean_site_num = `Site Number`) , 
+                   'clean_site_num')
+
+
+river_metab_cumsum_names$Name <- forcats::fct_relevel(river_metab_cumsum_names$Name,
+                                                      site_mean_ann_gpp %>% 
+                                                        dplyr::pull(`Clean Name`)
+                                                      )
+
+y_axis_title <- bquote(Cumulative ~ .(metab_units_area))
+
+fig_1 <- ggplot(river_metab_cumsum_names, 
+                aes(x = jday,
+                    y = GPP_C_cumsum,
+                    group = interaction(year, site),
+                    color = GPP_C_cumsum))+
+  geom_line(show.legend = FALSE)+
+  facet_wrap(forcats::fct_relevel(`Clean Name`,
+                                  site_mean_ann_gpp %>% 
+                                    dplyr::pull(`Clean Name`)) ~ .,
+             scales = 'free_y',
+             ncol = 5)+
+  scale_color_gradient(low = low_p,
+                       high = high_p)+
+  scale_y_continuous(breaks = function(y) {
+    max_value <- max(y, na.rm = TRUE)
+    tick_marks <- seq(0, round(max_value, digits = -2), length.out = 3)
+    return(tick_marks)
+  }
+  )+
+  labs(x = 'Day of Year',
+       y = y_axis_title)+
+  theme(axis.text.x = element_blank(),
+        strip.text = element_text(size = 7),
+        strip.background = element_rect(fill = 'white'))
+fig_1
+
+if(save_figs){
+  ggsave(plot = fig_1,
+         glue::glue(fig_dir, 'fig_1.png'),
+         dpi = dpi, 
+         width = 15, height = 13)
+}
+
+```
+
+# 2) Annual productivity range
+
+```{r viz-ann-prod, warning = FALSE, echo = TRUE, fig.width=11, fig.height=5}
+
+cv <- site_mean_ann_gpp %>% 
+  dplyr::select(site, GPP_ann_cv) %>% 
+  left_join(.,metab_all_annual, 'site')
+
+cv_sum <- cv %>% 
+  group_by(site) %>% 
+  summarise(mean_ann_GPP_C = mean(GPP_ann_sum, na.rm = TRUE), 
+            sd_ann_GPP_C = sd(GPP_ann_sum, na.rm = TRUE),
+            median_daily_CV = median(GPP_daily_cv, na.rm = TRUE),
+            min_daily_CV = min(GPP_daily_cv), 
+            max_daily_CV = max(GPP_daily_cv),
+            GPP_ann_cv = first(GPP_ann_cv),
+            GPP_range = max(GPP_ann_sum) - min(GPP_ann_sum),
+            CV_ratio = median_daily_CV/GPP_ann_cv)
+
+# boxplot of annual GPP for each site
+fig_2_a <- ggplot(metab_all_annual %>% 
+                    dplyr::mutate(clean_site_num = as.numeric(substr(site, 6,30))) %>% 
+                    dplyr::left_join(table_s1 %>% 
+                     rename(clean_site_num = `Site Number`) , 
+                   'clean_site_num'),
+                  aes(x = forcats::fct_relevel(`Clean Name`,
+                                               site_mean_ann_gpp %>% 
+                                                 dplyr::pull(`Clean Name`)), 
+                      y = GPP_ann_sum))+
+  geom_boxplot(width = 0.75,
+               outlier.shape = NA,
+               show.legend = FALSE,)+
+  geom_point(aes(color = GPP_ann_sum),
+             size = 1)+
+  coord_flip()+
+  scale_y_continuous(name = metab_units_area,
+                     limits = c(-1, 4000))+
+  scale_color_gradient(name = metab_units_area,
+                       low = low_p,
+                       high = high_p)+
+  theme(axis.text.y = element_text(angle = 0, size = 8,
+                                   hjust = 0.95,vjust = 0.2),
+        axis.title.y = element_blank(),
+        legend.position = c(0.9,0.9),
+        legend.justification = c(0.9,0.9),
+        legend.background = element_rect(fill = NA, 
+                                         color = 'black'))
+fig_2_a
+
+
+fig_2_b <- ggplot2::ggplot(data = site_mean_ann_gpp,
+                           aes(y = median_ann_GPP, 
+                               x = GPP_ann_cv,
+                               group = site,
+                               color = median_ann_GPP))+
+  ggplot2::geom_point(size = 2)+
+  geom_errorbar(aes(ymin = median_ann_GPP - sd_ann_GPP,
+                    ymax = median_ann_GPP + sd_ann_GPP))+
+  ggplot2::labs(x = expression(paste(CV[GPP-Inter],' (%)')),
+                y = expression(paste('Median Annual GPP (g C  ',m^-2, ' ',y^-1,')')))+
+  lims(y = c(0, 3000),
+       x = c(5, 40))+
+  scale_color_gradient(low = low_p,
+                       high = high_p)+
+  theme(legend.position = 'none')
+fig_2_b
+
+
+fig_2_c <- ggplot(cv,
+       aes(x = GPP_ann_cv,
+           y = GPP_daily_cv,
+           color = GPP_ann_sum,
+           group = site))+
+  geom_point()+
+  geom_line()+
+  geom_smooth(method = 'lm')+
+  geom_abline(intercept = 0, slope = 1, linetype = 'dashed')+
+  scale_color_gradient(name = metab_units_area,
+                       low = low_p,
+                       high = high_p,)+
+  lims(x = c(5,40),
+       y = c(20,160))+
+  labs(x = expression(paste(CV[GPP-Inter], ' (%)')),
+       y = expression(paste(CV[GPP-Intra], ' (%)')))+
+  theme(legend.position = 'none')
+
+
+
+fig_2 <- ggpubr::ggarrange(fig_2_a,NA,
+                           ggpubr::ggarrange(fig_2_b,
+                                             fig_2_c, 
+                                             nrow = 2,
+                                             labels = c('b', 'c'),
+                                             align = 'v'),
+                           widths = c(1.5,0,1),
+                           labels = 'a',
+                           # hjust = c(-8.5,-8),
+                           # vjust = c(1.7, 1.7),
+                           ncol = 3,
+                           align = 'v')
+fig_2
+
+if(save_figs){
+  ggsave(plot = fig_2,
+         glue::glue(fig_dir, 'fig_2.png'),
+         dpi = dpi,
+         width = 11, height = 8)
+}
+```
+
+# 3) When are rivers productive
+
+```{r gpp-quantiles, warning = FALSE, echo = TRUE, fig.width=6, fig.height=10}
+list_quants <- list()
+quantiles <- c(0.25, 0.5, 0.75, 0.95)
+for(i in 1:length(quantiles)){
+  
+  quantile <- quantiles[i]
+  
+  list_quants[[i]] <- river_metab_cumsum %>% 
+    dplyr::select(site, date, year, GPP_C_cumsum) %>% 
+    dplyr::group_by(site, 
+                    year = lubridate::year(date)) %>% 
+    dplyr::mutate(jday = lubridate::yday(date),
+                  gpp_cdf = ecdf(GPP_C_cumsum)(GPP_C_cumsum)) %>% 
+    dplyr::arrange(site, year, gpp_cdf) %>% 
+    dplyr::slice(which.min(abs(gpp_cdf - quantile))) 
+}
+names(list_quants) <- quantiles
+df_quants <- map_df(list_quants, 
+                    ~as.data.frame(.x), 
+                    .id = 'quantile')
+
+# by quantile plots 
+
+# rank sites by increasing variability of 50th percentile
+quant_50_rank <- list_quants[[1]] %>% 
+  dplyr::group_by(site) %>% 
+  dplyr::summarise(iqr = IQR(jday)) %>% 
+  dplyr::arrange(desc(iqr)) %>% 
+  dplyr::pull(site)
+
+
+quant_75_rank <- list_quants[[2]] %>% 
+  dplyr::group_by(site) %>% 
+  dplyr::summarise(iqr = IQR(jday)) %>% 
+  dplyr::arrange(desc(iqr)) %>% 
+  dplyr::pull(site)
+
+
+quant_95_rank <- list_quants[[3]] %>% 
+  dplyr::group_by(site) %>% 
+  dplyr::summarise(iqr = IQR(jday)) %>% 
+  dplyr::arrange(desc(iqr)) %>% 
+  dplyr::pull(site)
+
+```
+
+```{r quant-trends, echo=TRUE, warning = FALSE, fig.height=7, fig.width=7}
+# trend analysis for quantiles
+quantile_trends <- df_quants %>% 
+  dplyr::group_by(site, quantile) %>% 
+  tidyr::nest() %>% 
+  dplyr::mutate(mk_test = purrr::map(data, ~trend::mk.test(x = .$jday))) %>% 
+  dplyr::mutate(mk_p = purrr::map_dbl(mk_test, ~.$p.value),
+                mk_s = purrr::map_dbl(mk_test, ~.$estimates['S']),
+                mk_sig = ifelse(mk_p <= 0.05, 'significant', 'non-significant'),
+                mk_slope = ifelse(mk_s > 0, 'increasing', 'decreasing')) 
+
+quantile_sum_sigs <- quantile_trends %>% 
+  dplyr::ungroup() %>% 
+  dplyr::select(quantile, site, 
+                mk_p, mk_s, mk_sig, mk_slope)
+
+quants_n_sig <- quantile_sum_sigs %>% 
+  dplyr::filter(mk_p <= 0.05) %>% 
+  dplyr::group_by(quantile,mk_slope) %>% 
+  summarise(n = n()) %>% 
+  data.frame()
+
+quantile_trends_sum <- df_quants %>% 
+  dplyr::left_join(quantile_sum_sigs) %>% 
+  dplyr::mutate(mk_meaning = case_when(mk_slope == 'increasing' ~ 'Later',
+                                       mk_slope == 'decreasing' ~ 'Earlier'))
+
+table_s2 <- quantile_trends_sum %>% 
+  dplyr::filter(mk_p < 0.05) %>% 
+  dplyr::select(quantile, site, year, date, jday, mk_s,mk_p,mk_meaning) %>% 
+  dplyr::mutate(across(where(is.numeric), round, 3))
+readr::write_csv(table_s2,
+                 'data/data_citation/ms_usgs_annual_metab/table_s2_quantile_trends.csv')
+
+fig_3 <- ggplot(quantile_trends_sum,
+                aes(x = year,
+                    y = jday,
+                    group = site,
+                    color = mk_meaning))+
+  # geom_point()+
+  geom_line(linewidth = 0.6)+
+  gghighlight::gghighlight(mk_sig == 'significant',
+                           use_direct_label = FALSE,
+                           keep_scales = TRUE,
+                           unhighlighted_params = list(alpha("grey10", 0.4),
+                                                       linewidth = 0.2),
+                           calculate_per_facet = TRUE)+
+  # ggside::geom_ysidedensity(aes(x = stat(density)))+
+  scale_y_continuous(limits = c(0, 366))+
+  scale_color_manual(name = element_blank(),
+                     values = c(high_p, low_p))+
+  facet_wrap(. ~ quantile,
+             scales = 'free', 
+             nrow = 2, ncol = 2)+
+  labs(x = 'Year',
+       y = 'Day of Year')+
+  theme(legend.title = element_blank())
+fig_3
+
+if(save_figs){
+  ggsave(plot = fig_3,
+         glue::glue(fig_dir, 'fig_3.png'),
+         dpi = dpi,
+         width = 6.5, height = 5)
+}
+
+```
+
+# 4) Annual productivity trends
+
+```{r prod-trends, warning = FALSE, echo = TRUE, fig.width=5, fig.height=5}
+
+annual_C_sum_trends <- metab_all_annual %>% 
+  # dplyr::select(site, year, GPP_ann_C) %>% 
+  dplyr::group_by(site, Name) %>% 
+  tidyr::nest() %>% 
+  dplyr::mutate(mk_test = purrr::map(data, ~trend::mk.test(x = .$GPP_ann_sum))) %>% 
+  dplyr::mutate(mk_p = purrr::map_dbl(mk_test, ~.$p.value),
+                mk_s = purrr::map_dbl(mk_test, ~.$estimates['S']),
+                mk_sig = ifelse(mk_p <= 0.05, 'significant', 'non-significant'),
+                mk_slope = ifelse(mk_s > 0, 'increasing', 'decreasing')) 
+
+
+annual_C_sum_sigs <- annual_C_sum_trends %>% 
+  dplyr::ungroup() %>% 
+  dplyr::select(site, 
+                mk_p, mk_s, mk_sig, mk_slope)
+
+
+n_sig <- annual_C_sum_sigs %>% 
+  dplyr::filter(mk_p <= 0.05) %>% 
+  dplyr::group_by(mk_slope) %>% 
+  summarise(n = n()) %>% 
+  data.frame()
+
+lt_changers <- annual_C_sum_sigs %>% 
+  dplyr::filter(mk_p <= 0.05) %>% 
+  dplyr::pull(site)
+
+river_trends <- metab_all_annual %>% 
+  dplyr::left_join(annual_C_sum_sigs) 
+
+
+fig_4 <- ggplot2::ggplot(river_trends,
+                         ggplot2::aes(x = year, 
+                                      y = GPP_ann_sum,
+                                      color = mk_s))+
+  ggplot2::geom_line(aes(group = `Clean Name`),
+                     linewidth = 0.6)+
+  scale_y_continuous(limits = c(0, 4000))+
+  scale_x_continuous(n.breaks = 10)+
+  gghighlight::gghighlight(mk_sig == 'significant',
+                           use_direct_label = TRUE,
+                           keep_scales = TRUE,
+                           unhighlighted_params = list(alpha("grey40", 0.4),
+                                                       linewidth = 0.4))+
+  ggplot2::labs(y = metab_units_area)+
+  scale_color_gradient(name = element_blank(),
+                     low = low_p, 
+                     high = high_p)+
+  theme(axis.title.x = element_blank(),
+        legend.position = 'none',
+        legend.text = element_text(size = 10),
+        legend.background = element_rect(color = 'black',
+                                         linewidth = 0.25),
+        legend.margin = margin(-0.5, 1, 0.4, 0.1))
+fig_4
+
+if(save_figs){
+  ggsave(plot = fig_4,
+         glue::glue(fig_dir, 'fig_4.png'),
+         dpi = dpi,
+         width = 5, height = 4)
+}
+
+
+table_s3 <- annual_C_sum_sigs %>% 
+  dplyr::select(site, mk_s,mk_p)
+colnames(table_s3) <- c('Site',
+                        "Sen's Slope",
+                        "Sen's p-value",
+                        "Mann-Kendall S",
+                        "Mann-Kendall p-value")
+readr::write_csv(table_s3,
+                 'data/data_citation/ms_usgs_annual_metab/table_s3_trend_stats.csv')
+
+```
+
+# Session Info
+
+```{r session-info}
+pander::pander(sessionInfo())
+```
