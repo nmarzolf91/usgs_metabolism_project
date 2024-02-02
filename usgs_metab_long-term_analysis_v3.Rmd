@@ -93,41 +93,7 @@ if(!dir.exists(fig_dir)){
 }
 ```
 
-# Explore sites- MOVE ME DOWN
 
-```{r sites, warning = FALSE, echo = TRUE}
-# histogram of watershed areas
-table_s1 <- readr::read_csv('data/data_citation/1_site_info.csv')
-table_s1
-
-readr::write_csv(table_s1,
-                 'data/data_citation/ms_usgs_annual_metab/table_s1_site_info.csv')
-
-table_s1_plot <- table_s1 %>% 
-  sf::st_as_sf(.,
-               coords = c('Longitude', 'Latitude'),
-               crs = 4326)
-
-fig_s1_map <- ggplot()+
-  geom_sf(data = world %>% 
-            dplyr::filter(name_long == 'United States') %>% 
-            sf::st_set_crs(4326),
-          fill = 'white')+
-  geom_sf(data = table_s1_plot)+
-  # geom_sf_label(data = table_s1_plot,
-  #              aes(label = `Clean Name`),
-  #              check_overlap = TRUE)+
-  coord_sf(xlim = c(-130, -65), ylim = c(23, 55), expand = FALSE)
-
-
-fig_s1_hist <- ggplot(table_s1,
-                      aes(x = `Drainage Area (km2)`*2.58999))+ # convert to km2
-  geom_histogram()+
-  labs(x = expression(paste('Watershed area (', km^2,')')),
-       y = 'Count')+
-  scale_x_log10()
-fig_s1_hist
-```
 
 ```{r fig-s1, fig.width = 9, fig.height = 4}
 fig_s1 <- cowplot::plot_grid(fig_s1_map,
@@ -194,40 +160,16 @@ metab_all_annual <- river_metab_filled %>%
                                                 method = 'l.moments')*100) %>% 
   dplyr::mutate(clean_site_num = as.numeric(substr(site, 6,30))) %>% 
   dplyr::left_join(table_s1 %>% 
-                     rename(clean_site_num = `Site Number`) , 
+                     rename(clean_site_num = `Site Number`,
+                            clean_name = `Clean Name`) , 
                    'clean_site_num')
 summary(metab_all_annual$GPP_ann_C)
-
-
-# plot of annual productivity time-series
-fig_s2 <- ggplot2::ggplot(metab_all_annual,
-                          aes(x = year,
-                              y = GPP_ann_sum,
-                              group = site,
-                              color = GPP_ann_sum))+
-  ggplot2::geom_line()+
-  ggplot2::geom_point()+
-  ggplot2::scale_color_gradient(name = metab_units_area,
-                                low = low_p,
-                                high = high_p)+
-  ggplot2::ylab(metab_units_area)+
-  ggplot2::theme(axis.title.x = element_blank(),
-                 legend.position = 'none')+
-  scale_y_continuous(limits = c(0 , 4000))
-fig_s2
-
-if(save_figs){
-  ggsave(plot = fig_s2,
-         glue::glue(fig_dir,'fig_s2.png'),
-         dpi = dpi, 
-         width = 6, height = 4)
-}
 
 
 
 # calculate median annual and CV for each site time series
 site_mean_ann_gpp <- metab_all_annual %>% 
-  dplyr::group_by(site) %>% 
+  dplyr::group_by(site, clean_name) %>% 
   dplyr::summarise(median_ann_GPP = median(GPP_ann_sum, na.rm = TRUE),
                    sd_ann_GPP = sd(GPP_ann_sum, na.rm = TRUE),
                    min_ann_GPP = min(GPP_ann_sum, na.rm = TRUE),
@@ -254,13 +196,14 @@ river_metab_cumsum_names <- river_metab_cumsum %>%
   dplyr::mutate(clean_site_num = as.numeric(substr(site, 6,30))) %>% 
   dplyr::left_join(table_s1 %>% 
                      rename(clean_site_num = `Site Number`) , 
-                   'clean_site_num')
+                   'clean_site_num') %>% 
+  dplyr::rename(clean_name = `Clean Name`)
 
 
 river_metab_cumsum_names$Name <- forcats::fct_relevel(river_metab_cumsum_names$Name,
                                                       site_mean_ann_gpp %>% 
-                                                        dplyr::pull(`Clean Name`)
-                                                      )
+                                                        dplyr::pull(clean_name)
+)
 
 y_axis_title <- bquote(Cumulative ~ .(metab_units_area))
 
@@ -270,9 +213,9 @@ fig_1 <- ggplot(river_metab_cumsum_names,
                     group = interaction(year, site),
                     color = GPP_C_cumsum))+
   geom_line(show.legend = FALSE)+
-  facet_wrap(forcats::fct_relevel(`Clean Name`,
+  facet_wrap(forcats::fct_relevel(clean_name,
                                   site_mean_ann_gpp %>% 
-                                    dplyr::pull(`Clean Name`)) ~ .,
+                                    dplyr::pull(clean_name)) ~ .,
              scales = 'free_y',
              ncol = 5)+
   scale_color_gradient(low = low_p,
@@ -319,18 +262,14 @@ cv_sum <- cv %>%
             CV_ratio = median_daily_CV/GPP_ann_cv)
 
 # boxplot of annual GPP for each site
-fig_2_a <- ggplot(metab_all_annual %>% 
-                    dplyr::mutate(clean_site_num = as.numeric(substr(site, 6,30))) %>% 
-                    dplyr::left_join(table_s1 %>% 
-                     rename(clean_site_num = `Site Number`) , 
-                   'clean_site_num'),
-                  aes(x = forcats::fct_relevel(`Clean Name`,
+fig_2_a <- ggplot(metab_all_annual,
+                  aes(x = forcats::fct_relevel(clean_name,
                                                site_mean_ann_gpp %>% 
-                                                 dplyr::pull(`Clean Name`)), 
+                                                 dplyr::pull(clean_name)), 
                       y = GPP_ann_sum))+
   geom_boxplot(width = 0.75,
                outlier.shape = NA,
-               show.legend = FALSE,)+
+               show.legend = FALSE)+
   geom_point(aes(color = GPP_ann_sum),
              size = 1)+
   coord_flip()+
@@ -368,10 +307,10 @@ fig_2_b
 
 
 fig_2_c <- ggplot(cv,
-       aes(x = GPP_ann_cv,
-           y = GPP_daily_cv,
-           color = GPP_ann_sum,
-           group = site))+
+                  aes(x = GPP_ann_cv,
+                      y = GPP_daily_cv,
+                      color = GPP_ann_sum,
+                      group = site))+
   geom_point()+
   geom_line()+
   geom_smooth(method = 'lm')+
@@ -484,12 +423,6 @@ quantile_trends_sum <- df_quants %>%
   dplyr::mutate(mk_meaning = case_when(mk_slope == 'increasing' ~ 'Later',
                                        mk_slope == 'decreasing' ~ 'Earlier'))
 
-table_s2 <- quantile_trends_sum %>% 
-  dplyr::filter(mk_p < 0.05) %>% 
-  dplyr::select(quantile, site, year, date, jday, mk_s,mk_p,mk_meaning) %>% 
-  dplyr::mutate(across(where(is.numeric), round, 3))
-readr::write_csv(table_s2,
-                 'data/data_citation/ms_usgs_annual_metab/table_s2_quantile_trends.csv')
 
 fig_3 <- ggplot(quantile_trends_sum,
                 aes(x = year,
@@ -531,7 +464,7 @@ if(save_figs){
 
 annual_C_sum_trends <- metab_all_annual %>% 
   # dplyr::select(site, year, GPP_ann_C) %>% 
-  dplyr::group_by(site, Name) %>% 
+  dplyr::group_by(site, clean_name) %>% 
   tidyr::nest() %>% 
   dplyr::mutate(mk_test = purrr::map(data, ~trend::mk.test(x = .$GPP_ann_sum))) %>% 
   dplyr::mutate(mk_p = purrr::map_dbl(mk_test, ~.$p.value),
@@ -556,43 +489,204 @@ lt_changers <- annual_C_sum_sigs %>%
   dplyr::filter(mk_p <= 0.05) %>% 
   dplyr::pull(site)
 
+
 river_trends <- metab_all_annual %>% 
   dplyr::left_join(annual_C_sum_sigs) 
 
 
-fig_4 <- ggplot2::ggplot(river_trends,
-                         ggplot2::aes(x = year, 
-                                      y = GPP_ann_sum,
-                                      color = mk_s))+
-  ggplot2::geom_line(aes(group = `Clean Name`),
-                     linewidth = 0.6)+
-  scale_y_continuous(limits = c(0, 4000))+
+fig_4_a <- ggplot2::ggplot(river_trends,
+                           ggplot2::aes(x = year, 
+                                        y = GPP_ann_sum,
+                                        color = mk_slope))+
+  ggplot2::geom_line(linewidth = 0.8,
+                     aes(group = clean_name))+
+  #geom_label_repel()+
+  scale_y_continuous(limits = c(10, 4000))+
   scale_x_continuous(n.breaks = 10)+
+  scale_color_manual(name = element_blank(),
+                     values = c(low_p, high_p),
+                     labels = c(glue::glue('Decreasing (n = ', n_sig[1,2],')'),
+                                glue::glue('Increasing (n = ', n_sig[2,2],')')))+
   gghighlight::gghighlight(mk_sig == 'significant',
-                           use_direct_label = TRUE,
+                           use_direct_label = FALSE,
                            keep_scales = TRUE,
                            unhighlighted_params = list(alpha("grey40", 0.4),
                                                        linewidth = 0.4))+
   ggplot2::labs(y = metab_units_area)+
-  scale_color_gradient(name = element_blank(),
-                     low = low_p, 
-                     high = high_p)+
   theme(axis.title.x = element_blank(),
-        legend.position = 'none',
-        legend.text = element_text(size = 10),
+        legend.title = element_blank(),
+        legend.key.size = unit(0.3,'cm'),
+        legend.justification = c(0.01, 0.99),
+        legend.position = c(0.01, 0.99),
+        legend.text = element_text(size = 8),
+        legend.background = element_rect(color = 'black',
+                                         linewidth = 0.25)
+  )
+
+
+fig_4_b <- river_trends %>% 
+  filter(site %in% lt_changers) %>% 
+  ggplot(aes(x = year,
+             y = GPP_daily_cv,
+             group = clean_name,
+             color = mk_slope))+
+  geom_line(linewidth = 0.8,
+            show.legend = FALSE)+
+  # geom_label(data = river_trends[!duplicated(label_indices), ],
+  #            aes(x = year,
+  #                y = GPP_daily_cv,
+  #                label = clean_name),
+  #            show.legend = FALSE)+
+  # scale_color_gradient(name = element_blank(),
+  #                      low = low_p, high = high_p)+
+  scale_color_manual(name = element_blank(),
+                     values = c(low_p, high_p),
+                     # labels = c(glue::glue('Decreasing (n = ', n_sig[1,2],')'),
+                     #            glue::glue('Increasing (n = ', n_sig[2,2],')'))
+  )+
+  labs(y = expression(paste(CV[GPP-Intra])))+
+  lims(y = c(0, 100))+
+  theme(axis.title.x = element_blank())
+
+
+temp_stats <- river_trends %>% 
+  group_by(site) %>% 
+  summarise(mk_slope = first(mk_slope),
+            temp_out = list(tidy(lm(log10(GPP_ann_sum) ~ temp_daily_mean)))) %>% 
+  unnest(temp_out) %>% 
+  filter(term == 'temp_daily_mean')
+
+
+metab_all_temp_stats <- left_join(metab_all_annual, temp_stats, 'site') %>% 
+  mutate(is_sig = ifelse(p.value <= 0.05,
+                         'significant', 
+                         'non-significant'), 
+         direction = ifelse(estimate >= 0, 
+                            'positive', 
+                            'negative'))
+
+fig_4_c <- metab_all_temp_stats %>% 
+  filter(temp_daily_mean > 5,
+         site %in% lt_changers) %>% 
+  ggplot(.,
+         aes(x = temp_daily_mean,
+             y = GPP_ann_sum,
+             color = mk_slope))+
+  geom_point()+
+  geom_smooth(aes(group = site),
+              method = 'lm', 
+              se = FALSE, 
+              color = 'grey40')+
+  # directlabels::geom_dl(label = 'text', method = "maxvar.points", inherit.aes = TRUE)+
+  # geom_abline(slope = temp_all$coefficients[2],
+  #             intercept = temp_all$coefficients[1],
+  #             linetype = 'dashed',
+  #             color = 'black')+
+  gghighlight::gghighlight(is_sig == 'significant',use_direct_label = FALSE,
+                           unhighlighted_params = list(alpha("grey10", 0.4),
+                                                       linewidth = 0.2))+
+  scale_y_log10()+
+  scale_color_manual(name = 'Long Term GPP Trend',
+                     values = c(low_p, high_p),
+                     labels = c('Increasing','Decreasing'))+
+  labs(x = 'Mean Daily Temperature (°C)',
+       y = metab_units_area)+
+  theme(legend.position = 'none')
+
+
+
+cv_Q_stats <- river_trends %>% 
+  group_by(site) %>% 
+  summarise(mk_slope = first(mk_slope),
+            out = list(tidy(lm(log10(GPP_ann_sum) ~ Q_daily_cv)))) %>% 
+  unnest(out) %>% 
+  filter(term == 'Q_daily_cv')
+
+
+metab_all_cvQ_stats <- left_join(metab_all_annual, cv_Q_stats, 'site') %>% 
+  mutate(is_sig = ifelse(p.value <= 0.05,
+                         'significant', 
+                         'non-significant'), 
+         direction = ifelse(estimate >= 0, 
+                            'positive', 
+                            'negative'))
+
+fig_4_d <- metab_all_cvQ_stats %>% 
+  filter(site %in% lt_changers) %>% 
+  ggplot(.,
+         aes(x = Q_daily_cv,
+             y = GPP_ann_sum,
+             color = mk_slope))+
+  geom_point()+
+  geom_smooth(aes(group = site),
+              method = 'lm', 
+              se = FALSE, 
+              color = 'grey40')+
+  # geom_abline(slope = temp_all$coefficients[2],
+  #             intercept = temp_all$coefficients[1],
+  #             linetype = 'dashed',
+  #             color = 'black')+
+  gghighlight::gghighlight(is_sig == 'significant',
+                           use_direct_label = FALSE,
+                           unhighlighted_params = list(alpha("grey10", 0.4),
+                                                       linewidth = 0.2))+
+  # directlabels::geom_dl(label = as.factor(metab_all_cvQ_stats %>%
+  #                                           filter(site %in% lt_changers) %>%
+  #                                           pull(clean_name)),
+  #                       method = "maxvar.points", inherit.aes = TRUE)+
+  # facet_grid(. ~ is_sig)+
+  scale_y_log10()+
+  scale_color_manual(name = 'Long Term GPP Trend',
+                     values = c(low_p, high_p),
+                     labels = c('Increasing','Decreasing'))+
+  labs(x = expression(paste(CV[Q-Intra], ' (%)')),
+       y = metab_units_area)+
+  theme(legend.position = c(0.01, 0.01),
+        legend.justification = c(0.01, 0.01),
+        legend.key.size = unit(0.3,'cm'),
+        legend.text = element_text(size = 8),
         legend.background = element_rect(color = 'black',
                                          linewidth = 0.25),
-        legend.margin = margin(-0.5, 1, 0.4, 0.1))
-fig_4
+        legend.title = element_text(size = 8))
+
+fig_4 <- ggpubr::ggarrange(fig_4_a,
+                           fig_4_b,
+                           fig_4_c,
+                           fig_4_d,
+                           nrow = 2,
+                           ncol = 2,
+                           align = 'hv',
+                           labels = 'auto')
 
 if(save_figs){
   ggsave(plot = fig_4,
          glue::glue(fig_dir, 'fig_4.png'),
          dpi = dpi,
-         width = 5, height = 4)
+         width = 10, height = 8)
 }
 
+```
 
+# 5) Supplemental tables and figures
+```{r supp-figs, warning = FALSE, echo = TRUE, fig.width=5, fig.height=5}
+
+# Table S1
+table_s1 <- readr::read_csv('data/data_citation/1_site_info.csv')
+table_s1
+
+readr::write_csv(table_s1,
+                 'data/data_citation/ms_usgs_annual_metab/table_s1_site_info.csv')
+
+# Table S2
+table_s2 <- quantile_trends_sum %>% 
+  dplyr::filter(mk_p < 0.05) %>% 
+  dplyr::select(quantile, site, year, date, jday, mk_s,mk_p,mk_meaning) %>% 
+  dplyr::mutate(across(where(is.numeric), round, 3))
+
+readr::write_csv(table_s2,
+                 'data/data_citation/ms_usgs_annual_metab/table_s2_quantile_trends.csv')
+
+# Table S3
 table_s3 <- annual_C_sum_sigs %>% 
   dplyr::select(site, mk_s,mk_p)
 colnames(table_s3) <- c('Site',
@@ -602,8 +696,207 @@ colnames(table_s3) <- c('Site',
                         "Mann-Kendall p-value")
 readr::write_csv(table_s3,
                  'data/data_citation/ms_usgs_annual_metab/table_s3_trend_stats.csv')
+table_s1_plot <- table_s1 %>% 
+  sf::st_as_sf(.,
+               coords = c('Longitude', 'Latitude'),
+               crs = 4326) %>% 
+  rename(clean_name = `Clean Name`) %>% 
+  left_join(site_mean_ann_gpp, 'clean_name')
 
+
+# Figure S1
+fig_s1_map <- ggplot()+
+  geom_sf(data = world %>% 
+            dplyr::filter(name_long == 'United States') %>% 
+            sf::st_set_crs(4326),
+          fill = 'white')+
+  geom_sf(data = table_s1_plot,
+          aes(color = median_ann_GPP,
+              size = median_ann_GPP))+
+  scale_color_gradient(name = metab_units_area,
+                       low = low_p,
+                       high = high_p)+
+  scale_size_continuous(guide = 'none')+
+  coord_sf(xlim = c(-130, -65), ylim = c(23, 55), expand = FALSE)
+
+
+fig_s1_hist <- ggplot(table_s1,
+                      aes(x = `Drainage Area (km2)`*2.58999))+ # convert to km2
+  geom_histogram()+
+  labs(x = expression(paste('Watershed area (', km^2,')')),
+       y = 'Count')+
+  scale_x_log10()
+fig_s1_hist
+
+
+fig_s1 <- ggpubr::ggarrange(fig_s1_map,
+                             fig_s1_hist,
+                             ncol = 2, 
+                             rel_widths = c(2,1),
+                             axis = 'b',
+                             align = 'v')
+fig_s1
+
+if(save_figs) {
+ggsave(plot = fig_s1,
+       'manuscript/long-term_GPP/figures/fig_s1.png',
+       dpi = 1200,
+       width = 8, height = 3)
+}
+
+
+
+# Figure S2
+fig_s2 <- ggplot2::ggplot(metab_all_annual,
+                          aes(x = year,
+                              y = GPP_ann_sum,
+                              group = site,
+                              color = GPP_ann_sum))+
+  ggplot2::geom_line()+
+  ggplot2::geom_point()+
+  ggplot2::scale_color_gradient(name = metab_units_area,
+                                low = low_p,
+                                high = high_p)+
+  ggplot2::ylab(metab_units_area)+
+  ggplot2::theme(axis.title.x = element_blank(),
+                 legend.position = 'none')+
+  scale_y_continuous(limits = c(0 , 4000))
+fig_s2
+
+if(save_figs){
+  ggsave(plot = fig_s2,
+         glue::glue(fig_dir,'fig_s2.png'),
+         dpi = dpi, 
+         width = 6, height = 4)
+}
+
+
+# Figure S3
+fig_s3 <- river_metab_filled %>%
+  mutate(year = lubridate::year(date)) %>% 
+  group_by(site, 
+           year) %>% 
+  summarise(start_date = first(date),
+            last_date = last(date),
+            days_to_next_year = lubridate::interval(start_date, last_date) %/% days(1),
+            n_days = length(GPP)) %>% 
+  mutate(percent_days = (n_days/days_to_next_year)*100) %>% 
+  ggplot(.,
+         aes(x = year, y = site))+
+  geom_point(aes(color = percent_days,
+                 size = percent_days))+
+  scale_color_viridis_c()+
+  scale_size_continuous(guide = 'none')+
+  theme(axis.title = element_blank())
+
+if(save_figs){
+  ggsave(plot = fig_s3,
+         glue::glue(fig_dir,'fig_s3.png'),
+         dpi = dpi, 
+         width = 7, height = 10)
+}
+
+
+
+# Figure S4
+temp_all <- lm(data = metab_all_annual %>% 
+                 filter(temp_daily_mean > 5),
+               log10(GPP_ann_sum) ~ temp_daily_mean)
+summary(temp_all)
+
+temp_by_site <- lm(data = metab_all_annual,
+                   log10(GPP_ann_sum) ~ temp_daily_mean + site)
+summary(temp_by_site)
+
+temp_by_site_ranef <- lme4::lmer(data = metab_all_annual,
+                                 log10(GPP_ann_sum) ~ temp_daily_mean + (1|site))
+summary(temp_by_site_ranef)
+car::Anova(temp_by_site_ranef)
+
+fig_s4 <- metab_all_temp_stats %>% 
+  filter(temp_daily_mean > 5) %>% 
+  ggplot(.,
+         aes(x = temp_daily_mean,
+             y = GPP_ann_sum,
+             color = mk_slope))+
+  geom_point()+
+  geom_smooth(aes(group = site),
+              method = 'lm', 
+              se = FALSE, 
+              color = 'grey40')+
+  geom_abline(slope = temp_all$coefficients[2],
+              intercept = temp_all$coefficients[1],
+              linetype = 'dashed',
+              color = 'black')+
+  gghighlight::gghighlight(is_sig == 'significant',
+                           use_direct_label = FALSE,
+                           unhighlighted_params = list(alpha("grey10", 0.4),
+                                                       linewidth = 0.2))+
+  scale_y_log10()+
+  scale_color_manual(name = element_blank(),
+                     values = c(low_p, high_p),
+                     labels = c('Increasing','Decreasing'))+
+  labs(x = 'Mean Daily Temperature (°C)',
+       y = metab_units_area)+
+  theme(legend.position = 'none')
+
+if(save_figs){
+  ggsave(plot = fig_s4,
+         glue::glue(fig_dir,'fig_s4.png'),
+         dpi = dpi, 
+         width = 6, height = 6)
+}
+
+
+# Figure S5
+cvQ_all <- lm(data = metab_all_annual, 
+              log10(GPP_ann_sum) ~ Q_daily_cv)
+summary(cvQ_all)
+
+cvQ_by_site <- lm(data = metab_all_annual,
+                  log10(GPP_ann_sum) ~ Q_daily_cv + site)
+summary(cvQ_by_site)
+
+cvQ_by_site_ranef <- lme4::lmer(data = metab_all_annual,
+                                log10(GPP_ann_sum) ~ Q_daily_cv + (1|site))
+summary(cvQ_by_site_ranef)
+car::Anova(cvQ_by_site_ranef)
+
+fig_s5 <- metab_all_temp_stats %>% 
+  ggplot(.,
+         aes(x = Q_daily_cv,
+             y = GPP_ann_sum,
+             color = mk_slope))+
+  geom_point()+
+  geom_smooth(aes(group = site),
+              method = 'lm', 
+              se = FALSE, 
+              color = 'grey40')+
+  geom_abline(slope = cvQ_all$coefficients[2],
+              intercept = cvQ_all$coefficients[1],
+              linetype = 'dashed',
+              color = 'black')+
+  gghighlight::gghighlight(is_sig == 'significant',
+                           use_direct_label = FALSE,
+                           unhighlighted_params = list(alpha("grey10", 0.4),
+                                                       linewidth = 0.2))+
+  scale_y_log10()+
+  scale_color_manual(name = element_blank(),
+                     values = c(low_p, high_p),
+                     labels = c('Increasing','Decreasing'))+
+  labs(x = expression(paste(CV[Q-Intra], ' (%)')),
+       y = metab_units_area)+
+  theme(legend.position = 'none')
+
+if(save_figs){
+  ggsave(plot = fig_s5,
+         glue::glue(fig_dir,'fig_s5.png'),
+         dpi = dpi, 
+         width = 6, height = 6)
+}
 ```
+
+
 
 # Session Info
 
