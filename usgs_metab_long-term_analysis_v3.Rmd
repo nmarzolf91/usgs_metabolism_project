@@ -80,9 +80,9 @@ high_p <- '#43fa00'
 rq <- (1/32)*(2/1)*(1/1)*(12/1) 
 
 # where to save figures
-save_figs <- FALSE
+save_figs <- TRUE
 
-dpi <- 1200
+dpi <- 400
 
 version <- 'v3'
 
@@ -95,23 +95,6 @@ if(!dir.exists(fig_dir)){
 
 
 
-```{r fig-s1, fig.width = 9, fig.height = 4}
-fig_s1 <- cowplot::plot_grid(fig_s1_map,
-                             fig_s1_hist,
-                             ncol = 2, 
-                             rel_widths = c(2,1),
-                             axis = 'b',
-                             align = 'v')
-fig_s1
-
-if(save_figs){
-  ggsave(plot = fig_s1,
-         glue::glue(fig_dir, 'fig_s1.png'),
-         dpi = dpi,
-         width = 8.5, height = 3)
-}
-```
-
 # Load GPP data
 
 ```{r load-data, warning = FALSE, echo = TRUE}
@@ -119,6 +102,7 @@ if(save_figs){
 # modified function from 'code/metabolism_synthesis/Part II- Filtering and gap filling.Rmd
 source('code/functions/fill_and_normalize_metab.R')
 
+table_s1 <- readr::read_csv('data/data_citation/1_site_info.csv')
 river_metab <- readr::read_csv('data/data_citation/5_usgs_metabolism.csv') 
 river_metab_filled <- fill_and_normalize_metab(river_metab)
 
@@ -163,8 +147,6 @@ metab_all_annual <- river_metab_filled %>%
                      rename(clean_site_num = `Site Number`,
                             clean_name = `Clean Name`) , 
                    'clean_site_num')
-summary(metab_all_annual$GPP_ann_C)
-
 
 
 # calculate median annual and CV for each site time series
@@ -200,10 +182,9 @@ river_metab_cumsum_names <- river_metab_cumsum %>%
   dplyr::rename(clean_name = `Clean Name`)
 
 
-river_metab_cumsum_names$Name <- forcats::fct_relevel(river_metab_cumsum_names$Name,
+river_metab_cumsum_names$Name <- suppressWarnings(forcats::fct_relevel(river_metab_cumsum_names$Name,
                                                       site_mean_ann_gpp %>% 
-                                                        dplyr::pull(clean_name)
-)
+                                                        dplyr::pull(clean_name)))
 
 y_axis_title <- bquote(Cumulative ~ .(metab_units_area))
 
@@ -236,7 +217,7 @@ fig_1
 if(save_figs){
   ggsave(plot = fig_1,
          glue::glue(fig_dir, 'fig_1.png'),
-         dpi = dpi, 
+         dpi = 400, 
          width = 15, height = 13)
 }
 
@@ -286,6 +267,17 @@ fig_2_a <- ggplot(metab_all_annual,
         legend.background = element_rect(fill = NA, 
                                          color = 'black'))
 fig_2_a
+
+# Are more variable sites more productive?
+summary(lm(data = site_mean_ann_gpp,
+           median_ann_GPP ~ GPP_ann_cv))
+# No, p = 0.95
+
+# what if we remove the highly variable outliers?
+summary(lm(data = site_mean_ann_gpp %>% 
+             dplyr::filter(sd_ann_GPP < 700),
+           median_ann_GPP ~ GPP_ann_cv))
+# Yes, p = 0.01
 
 
 fig_2_b <- ggplot2::ggplot(data = site_mean_ann_gpp,
@@ -357,13 +349,13 @@ for(i in 1:length(quantiles)){
   
   quantile <- quantiles[i]
   
-  list_quants[[i]] <- river_metab_cumsum %>% 
-    dplyr::select(site, date, year, GPP_C_cumsum) %>% 
+  list_quants[[i]] <- river_metab_cumsum_names %>% 
+    dplyr::select(site, clean_name, date, year, GPP_C_cumsum) %>% 
     dplyr::group_by(site, 
                     year = lubridate::year(date)) %>% 
     dplyr::mutate(jday = lubridate::yday(date),
                   gpp_cdf = ecdf(GPP_C_cumsum)(GPP_C_cumsum)) %>% 
-    dplyr::arrange(site, year, gpp_cdf) %>% 
+    dplyr::arrange(site,clean_name, year, gpp_cdf) %>% 
     dplyr::slice(which.min(abs(gpp_cdf - quantile))) 
 }
 names(list_quants) <- quantiles
@@ -374,61 +366,112 @@ df_quants <- map_df(list_quants,
 # by quantile plots 
 
 # rank sites by increasing variability of 50th percentile
-quant_50_rank <- list_quants[[1]] %>% 
-  dplyr::group_by(site) %>% 
+quant_25_rank <- list_quants[[1]] %>% 
+  dplyr::group_by(site, clean_name) %>% 
   dplyr::summarise(iqr = IQR(jday)) %>% 
   dplyr::arrange(desc(iqr)) %>% 
-  dplyr::pull(site)
+  dplyr::pull(clean_name)
 
-
-quant_75_rank <- list_quants[[2]] %>% 
-  dplyr::group_by(site) %>% 
+quant_50_rank <- list_quants[[2]] %>% 
+  dplyr::group_by(site, clean_name) %>% 
   dplyr::summarise(iqr = IQR(jday)) %>% 
   dplyr::arrange(desc(iqr)) %>% 
-  dplyr::pull(site)
+  dplyr::pull(clean_name)
 
 
-quant_95_rank <- list_quants[[3]] %>% 
-  dplyr::group_by(site) %>% 
+quant_75_rank <- list_quants[[3]] %>% 
+  dplyr::group_by(site, clean_name) %>% 
   dplyr::summarise(iqr = IQR(jday)) %>% 
   dplyr::arrange(desc(iqr)) %>% 
-  dplyr::pull(site)
+  dplyr::pull(clean_name)
+
+
+quant_95_rank <- list_quants[[4]] %>% 
+  dplyr::group_by(site, clean_name) %>% 
+  dplyr::summarise(iqr = IQR(jday)) %>% 
+  dplyr::arrange(desc(iqr)) %>% 
+  dplyr::pull(clean_name)
+
+
+
+# temp changers
+temp_changers <- river_metab_cumsum_names %>% 
+  dplyr::filter(!is.na(temp.water)) %>% 
+  dplyr::group_by(clean_name) %>% 
+  tidyr::nest() %>% 
+  dplyr::mutate(sens = purrr::map(data, ~trend::sens.slope(x = .$temp.water)),
+                mk_test = purrr::map(data, ~trend::mk.test(x = .$temp.water))) %>% 
+  dplyr::mutate(sens_p = purrr::map(sens, ~.$p.value), 
+                sens_s = purrr::map_dbl(sens, ~.$estimates),
+                mk_p = purrr::map_dbl(mk_test, ~.$p.value),
+                mk_t = purrr::map_dbl(mk_test, ~.$estimates['tau']),
+                sens_sig = ifelse(sens_p <= 0.05, 'significant', 'non-significant'),
+                sens_slope = ifelse(sens_s > 0, 'warming', 'cooling'),
+                mk_sig = ifelse(mk_p <= 0.05, 'significant', 'non-significant'),
+                mk_slope = ifelse(mk_t > 0, 'warming', 'cooling')) 
+
+temp_changers %>% 
+  filter(mk_p < 0.05) %>% 
+  group_by(sens_slope) %>% 
+  summarise(n = n())
+
+warmers <- temp_changers %>% 
+  filter(mk_p < 0.05,
+         sens_slope == 'warming')
+
+coolers <- temp_changers %>% 
+  filter(mk_p < 0.05,
+         sens_slope == 'cooling')
 
 ```
 
 ```{r quant-trends, echo=TRUE, warning = FALSE, fig.height=7, fig.width=7}
 # trend analysis for quantiles
 quantile_trends <- df_quants %>% 
-  dplyr::group_by(site, quantile) %>% 
+  dplyr::group_by(clean_name, quantile) %>% 
   tidyr::nest() %>% 
-  dplyr::mutate(mk_test = purrr::map(data, ~trend::mk.test(x = .$jday))) %>% 
-  dplyr::mutate(mk_p = purrr::map_dbl(mk_test, ~.$p.value),
-                mk_s = purrr::map_dbl(mk_test, ~.$estimates['S']),
+  dplyr::mutate(sens = purrr::map(data, ~trend::sens.slope(x = .$jday)),
+                mk_test = purrr::map(data, ~trend::mk.test(x = .$jday))) %>% 
+  dplyr::mutate(sens_p = purrr::map(sens, ~.$p.value), 
+                sens_s = purrr::map_dbl(sens, ~.$estimates),
+                mk_p = purrr::map_dbl(mk_test, ~.$p.value),
+                mk_t = purrr::map_dbl(mk_test, ~.$estimates['tau']),
+                sens_sig = ifelse(sens_p <= 0.05, 'significant', 'non-significant'),
+                sens_slope = ifelse(sens_s > 0, 'increasing', 'decreasing'),
                 mk_sig = ifelse(mk_p <= 0.05, 'significant', 'non-significant'),
-                mk_slope = ifelse(mk_s > 0, 'increasing', 'decreasing')) 
+                mk_slope = ifelse(mk_t > 0, 'increasing', 'decreasing')) 
 
 quantile_sum_sigs <- quantile_trends %>% 
   dplyr::ungroup() %>% 
-  dplyr::select(quantile, site, 
-                mk_p, mk_s, mk_sig, mk_slope)
+  dplyr::select(quantile, clean_name, 
+                mk_p, mk_t, mk_sig, mk_slope,
+                sens_s, sens_sig, sens_slope)
 
 quants_n_sig <- quantile_sum_sigs %>% 
   dplyr::filter(mk_p <= 0.05) %>% 
-  dplyr::group_by(quantile,mk_slope) %>% 
+  dplyr::group_by(quantile, mk_slope) %>% 
   summarise(n = n()) %>% 
   data.frame()
 
 quantile_trends_sum <- df_quants %>% 
   dplyr::left_join(quantile_sum_sigs) %>% 
   dplyr::mutate(mk_meaning = case_when(mk_slope == 'increasing' ~ 'Later',
-                                       mk_slope == 'decreasing' ~ 'Earlier'))
+                                       mk_slope == 'decreasing' ~ 'Earlier'),
+                sens_meaning = case_when(sens_slope == 'increasing' ~ 'Later',
+                                       sens_slope == 'decreasing' ~ 'Earlier'))
+
+quantile_trenders <- quantile_trends_sum %>% 
+  filter(mk_p < 0.05) %>% 
+  group_by(quantile, clean_name) %>%
+  filter(row_number() == 1)
+  
 
 
 fig_3 <- ggplot(quantile_trends_sum,
                 aes(x = year,
                     y = jday,
                     group = site,
-                    color = mk_meaning))+
+                    color = sens_meaning))+
   # geom_point()+
   geom_line(linewidth = 0.6)+
   gghighlight::gghighlight(mk_sig == 'significant',
@@ -466,17 +509,23 @@ annual_C_sum_trends <- metab_all_annual %>%
   # dplyr::select(site, year, GPP_ann_C) %>% 
   dplyr::group_by(site, clean_name) %>% 
   tidyr::nest() %>% 
-  dplyr::mutate(mk_test = purrr::map(data, ~trend::mk.test(x = .$GPP_ann_sum))) %>% 
-  dplyr::mutate(mk_p = purrr::map_dbl(mk_test, ~.$p.value),
-                mk_s = purrr::map_dbl(mk_test, ~.$estimates['S']),
+  dplyr::mutate(sens = purrr::map(data, ~trend::sens.slope(x = .$GPP_ann_sum)),
+                mk_test = purrr::map(data, ~trend::mk.test(x = .$GPP_ann_sum))) %>% 
+  dplyr::mutate(sens_p = purrr::map(sens, ~.$p.value), 
+                sens_s = purrr::map_dbl(sens, ~.$estimates),
+                mk_p = purrr::map_dbl(mk_test, ~.$p.value),
+                mk_t = purrr::map_dbl(mk_test, ~.$estimates['tau']),
                 mk_sig = ifelse(mk_p <= 0.05, 'significant', 'non-significant'),
-                mk_slope = ifelse(mk_s > 0, 'increasing', 'decreasing')) 
+                mk_slope = ifelse(mk_t > 0, 'increasing', 'decreasing'),
+                sens_sig = ifelse(sens_p <= 0.05, 'significant', 'non-significant'),
+                sens_slope = ifelse(sens_s > 0, 'increasing', 'decreasing')) 
 
 
 annual_C_sum_sigs <- annual_C_sum_trends %>% 
   dplyr::ungroup() %>% 
   dplyr::select(site, 
-                mk_p, mk_s, mk_sig, mk_slope)
+                mk_p, mk_t, mk_sig, mk_slope,
+                sens_s, sens_sig, sens_slope)
 
 
 n_sig <- annual_C_sum_sigs %>% 
@@ -588,7 +637,7 @@ fig_4_c <- metab_all_temp_stats %>%
   scale_y_log10()+
   scale_color_manual(name = 'Long Term GPP Trend',
                      values = c(low_p, high_p),
-                     labels = c('Increasing','Decreasing'))+
+                     labels = c('Decreasing','Increasing'))+
   labs(x = 'Mean Daily Temperature (°C)',
        y = metab_units_area)+
   theme(legend.position = 'none')
@@ -638,7 +687,7 @@ fig_4_d <- metab_all_cvQ_stats %>%
   scale_y_log10()+
   scale_color_manual(name = 'Long Term GPP Trend',
                      values = c(low_p, high_p),
-                     labels = c('Increasing','Decreasing'))+
+                     labels = c('Decreasing','Increasing'))+
   labs(x = expression(paste(CV[Q-Intra], ' (%)')),
        y = metab_units_area)+
   theme(legend.position = c(0.01, 0.01),
@@ -680,22 +729,32 @@ readr::write_csv(table_s1,
 # Table S2
 table_s2 <- quantile_trends_sum %>% 
   dplyr::filter(mk_p < 0.05) %>% 
-  dplyr::select(quantile, site, year, date, jday, mk_s,mk_p,mk_meaning) %>% 
+  dplyr::select(quantile, site, year, date, jday) %>% 
   dplyr::mutate(across(where(is.numeric), round, 3))
 
 readr::write_csv(table_s2,
+                 'data/data_citation/ms_usgs_annual_metab/table_s2_quantiles.csv')
+
+
+table_s3 <- quantile_trends_sum %>% 
+  dplyr::filter(mk_p < 0.05) %>% 
+  dplyr::select(quantile, site, mk_t, mk_p,mk_meaning) %>% 
+  dplyr::mutate(across(where(is.numeric), round, 3)) %>% 
+  dplyr::group_by(quantile, site) %>% 
+  slice_head()
+
+readr::write_csv(table_s3,
                  'data/data_citation/ms_usgs_annual_metab/table_s2_quantile_trends.csv')
 
-# Table S3
-table_s3 <- annual_C_sum_sigs %>% 
-  dplyr::select(site, mk_s,mk_p)
+# Table S4
+table_s4 <- annual_C_sum_sigs %>% 
+  dplyr::select(site, sens_s, mk_p) %>% 
+  dplyr::mutate(across(where(is.numeric), round, 3))
 colnames(table_s3) <- c('Site',
                         "Sen's Slope",
-                        "Sen's p-value",
-                        "Mann-Kendall S",
                         "Mann-Kendall p-value")
 readr::write_csv(table_s3,
-                 'data/data_citation/ms_usgs_annual_metab/table_s3_trend_stats.csv')
+                 'data/data_citation/ms_usgs_annual_metab/table_s4_trend_stats.csv')
 table_s1_plot <- table_s1 %>% 
   sf::st_as_sf(.,
                coords = c('Longitude', 'Latitude'),
@@ -718,6 +777,7 @@ fig_s1_map <- ggplot()+
                        high = high_p)+
   scale_size_continuous(guide = 'none')+
   coord_sf(xlim = c(-130, -65), ylim = c(23, 55), expand = FALSE)
+fig_s1_map
 
 
 fig_s1_hist <- ggplot(table_s1,
@@ -729,50 +789,49 @@ fig_s1_hist <- ggplot(table_s1,
 fig_s1_hist
 
 
-fig_s1 <- ggpubr::ggarrange(fig_s1_map,
-                             fig_s1_hist,
-                             ncol = 2, 
-                             rel_widths = c(2,1),
-                             axis = 'b',
-                             align = 'v')
+fig_s1 <- ggpubr::ggarrange(fig_s1_map,NULL,
+                            fig_s1_hist,
+                            ncol = 3,
+                            widths = c(3,-0.5,1),
+                            align = 'v'
+                            )
 fig_s1
 
 if(save_figs) {
-ggsave(plot = fig_s1,
-       'manuscript/long-term_GPP/figures/fig_s1.png',
-       dpi = 1200,
-       width = 8, height = 3)
+  ggsave(plot = fig_s1,
+         glue::glue(fig_dir,'fig_s1.png'),
+         dpi = 1200,
+         width = 11, height = 3)
 }
 
 
-
-# Figure S2
-fig_s2 <- ggplot2::ggplot(metab_all_annual,
-                          aes(x = year,
-                              y = GPP_ann_sum,
-                              group = site,
-                              color = GPP_ann_sum))+
-  ggplot2::geom_line()+
-  ggplot2::geom_point()+
-  ggplot2::scale_color_gradient(name = metab_units_area,
-                                low = low_p,
-                                high = high_p)+
-  ggplot2::ylab(metab_units_area)+
-  ggplot2::theme(axis.title.x = element_blank(),
-                 legend.position = 'none')+
-  scale_y_continuous(limits = c(0 , 4000))
-fig_s2
-
-if(save_figs){
-  ggsave(plot = fig_s2,
-         glue::glue(fig_dir,'fig_s2.png'),
-         dpi = dpi, 
-         width = 6, height = 4)
-}
+# # Figure S2
+# fig_s2 <- ggplot2::ggplot(metab_all_annual,
+#                           aes(x = year,
+#                               y = GPP_ann_sum,
+#                               group = site,
+#                               color = GPP_ann_sum))+
+#   ggplot2::geom_line()+
+#   ggplot2::geom_point()+
+#   ggplot2::scale_color_gradient(name = metab_units_area,
+#                                 low = low_p,
+#                                 high = high_p)+
+#   ggplot2::ylab(metab_units_area)+
+#   ggplot2::theme(axis.title.x = element_blank(),
+#                  legend.position = 'none')+
+#   scale_y_continuous(limits = c(0 , 4000))
+# fig_s2
+# 
+# if(save_figs){
+#   ggsave(plot = fig_s2,
+#          glue::glue(fig_dir,'fig_s2.png'),
+#          dpi = dpi, 
+#          width = 6, height = 4)
+# }
 
 
 # Figure S3
-fig_s3 <- river_metab_filled %>%
+fig_s2 <- river_metab_filled %>%
   mutate(year = lubridate::year(date)) %>% 
   group_by(site, 
            year) %>% 
@@ -790,15 +849,38 @@ fig_s3 <- river_metab_filled %>%
   theme(axis.title = element_blank())
 
 if(save_figs){
-  ggsave(plot = fig_s3,
-         glue::glue(fig_dir,'fig_s3.png'),
+  ggsave(plot = fig_s2,
+         glue::glue(fig_dir,'fig_s2.png'),
          dpi = dpi, 
          width = 7, height = 10)
 }
 
 
+# histogram of number of site-years that have different percent coverages before gap filling
+fig_s3 <- river_metab %>%
+  mutate(year = lubridate::year(date)) %>% 
+  group_by(site, 
+           year) %>% 
+  summarise(start_date = first(date),
+            last_date = last(date),
+            days_to_next_year = lubridate::interval(start_date, last_date) %/% days(1),
+            n_days = length(GPP)) %>% 
+  mutate(percent_days = (n_days/days_to_next_year)*100) %>% 
+  ggplot(.,
+         aes(x = percent_days))+
+  geom_density()+
+  facet_wrap(site ~ .)+
+  labs(x = '% Days with Data',
+       y = 'Density')
+  
+if(save_figs){
+  ggsave(plot = fig_s3,
+         glue::glue(fig_dir,'fig_s3.png'),
+         dpi = dpi, 
+         width = 11, height = 7)
+}
 
-# Figure S4
+# Figure S5
 temp_all <- lm(data = metab_all_annual %>% 
                  filter(temp_daily_mean > 5),
                log10(GPP_ann_sum) ~ temp_daily_mean)
@@ -848,7 +930,7 @@ if(save_figs){
 }
 
 
-# Figure S5
+# Figure S6
 cvQ_all <- lm(data = metab_all_annual, 
               log10(GPP_ann_sum) ~ Q_daily_cv)
 summary(cvQ_all)
