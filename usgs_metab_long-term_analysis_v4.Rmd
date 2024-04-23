@@ -80,7 +80,7 @@ rq <- (1/32)*(2/1)*(1/1)*(12/1)
 # where to save figures
 save_figs <- TRUE
 
-dpi <- 800
+dpi <- 400
 
 version <- 'v4'
 
@@ -112,8 +112,8 @@ head(river_metab_filled)
 n_obs <- length(river_metab_filled$GPP_filled)
 
 n_sites <- length(unique(river_metab_filled %>% 
-  dplyr::filter(!is.na(site)) %>% 
-  dplyr::pull(site)))
+                           dplyr::filter(!is.na(site)) %>% 
+                           dplyr::pull(site)))
 
 ```
 
@@ -188,8 +188,8 @@ river_metab_cumsum_names <- river_metab_cumsum %>%
 
 
 river_metab_cumsum_names$Name <- suppressWarnings(forcats::fct_relevel(river_metab_cumsum_names$Name,
-                                                      site_mean_ann_gpp %>% 
-                                                        dplyr::pull(clean_name)))
+                                                                       site_mean_ann_gpp %>% 
+                                                                         dplyr::pull(clean_name)))
 
 y_axis_title <- bquote(Cumulative ~ .(metab_units_area))
 
@@ -357,7 +357,7 @@ fig_2
 if(save_figs){
   ggsave(plot = fig_2,
          glue::glue(fig_dir, 'fig_2.png'),
-         dpi = dpi,
+         dpi = 650,
          width = 11, height = 8)
 }
 ```
@@ -384,10 +384,10 @@ for(i in 1:nrow(df_out)){
   
   if(nrow(df_use) == 0)
     next
-
+  
   cumsum <- max(df_use$GPP_C_cumsum, na.rm = TRUE)
   df_out[i, 'GPP_C_cumsum'] <- cumsum
-
+  
   df_math <- df_use %>% 
     dplyr::mutate(GPP_C_cumsum_cdf = GPP_C_cumsum/cumsum) 
   
@@ -410,18 +410,18 @@ df_quants <- df_out %>%
   tidyr::fill(clean_name, .direction = 'down') 
 
 df_quants %>% 
-  group_by(quantile) %>% 
-  summarise(jday_median = median(jday, na.rm = TRUE),
-            jday_sd = sd(jday, na.rm = TRUE),
-            jday_min = min(jday, na.rm = TRUE),
-            jday_max = max(jday, na.rm = TRUE))
+  dplyr::group_by(quantile) %>% 
+  dplyr::summarise(jday_median = median(jday, na.rm = TRUE),
+                   jday_sd = sd(jday, na.rm = TRUE),
+                   jday_min = min(jday, na.rm = TRUE),
+                   jday_max = max(jday, na.rm = TRUE))
 
 df_quants %>% 
-  group_by(quantile, clean_name) %>% 
-  summarise(jday_median = median(jday, na.rm = TRUE),
-            jday_sd = sd(jday, na.rm = TRUE),
-            jday_min = min(jday, na.rm = TRUE),
-            jday_max = max(jday, na.rm = TRUE)) 
+  dplyr::group_by(quantile, clean_name) %>% 
+  dplyr::summarise(jday_median = median(jday, na.rm = TRUE),
+                   jday_sd = sd(jday, na.rm = TRUE),
+                   jday_min = min(jday, na.rm = TRUE),
+                   jday_max = max(jday, na.rm = TRUE)) 
 
 
 # by quantile plots 
@@ -496,6 +496,7 @@ quant_95_rank <- df_quants %>%
 ```{r quant-trends, echo=TRUE, warning = FALSE, fig.height=7, fig.width=7}
 # trend analysis for quantiles
 quantile_trends <- df_quants %>% 
+  dplyr::arrange(site, year) %>% 
   dplyr::group_by(site, quantile) %>% 
   tidyr::nest() %>% 
   dplyr::mutate(sens = purrr::map(data, ~trend::sens.slope(x = .$jday)),
@@ -508,7 +509,9 @@ quantile_trends <- df_quants %>%
                 sens_slope = ifelse(sens_s > 0, 'increasing', 'decreasing'),
                 mk_sig = ifelse(mk_p <= 0.05, 'significant', 'non-significant')
                 #mk_slope = ifelse(mk_t > 0, 'increasing', 'decreasing')
-                ) 
+  ) 
+
+
 
 quantile_sum_sigs <- quantile_trends %>% 
   dplyr::ungroup() %>% 
@@ -525,17 +528,17 @@ quants_n_sig <- quantile_sum_sigs %>%
 
 quantile_trends_sum <- df_quants %>% 
   dplyr::left_join(quantile_sum_sigs) %>% 
-  dplyr::mutate(sens_meaning = case_when(sens_slope == 'increasing' ~ 'Later',
-                                       sens_slope == 'decreasing' ~ 'Earlier'),
+  dplyr::mutate(sens_meaning = dplyr::case_when(sens_slope == 'increasing' ~ 'Later',
+                                                sens_slope == 'decreasing' ~ 'Earlier'),
                 # mk_meaning = case_when(mk_slope == 'increasing' ~ 'Later',
                 #                        mk_slope == 'decreasing' ~ 'Earlier'),
-                )
+  )
 
 quantile_trenders <- quantile_trends_sum %>% 
   dplyr::filter(mk_p <= 0.05) %>% 
   dplyr::group_by(quantile, clean_name) %>%
   dplyr::filter(row_number() == 1)
-  
+
 
 fig_3 <- ggplot(quantile_trends_sum,
                 aes(x = year,
@@ -790,7 +793,7 @@ fig_4 <- ggpubr::ggarrange(fig_4_a,
 if(save_figs){
   ggsave(plot = fig_4,
          glue::glue(fig_dir, 'fig_4.png'),
-         dpi = dpi,
+         dpi = 700,
          width = 10, height = 8)
 }
 
@@ -816,7 +819,7 @@ sum_NA_wide <- sum_NA %>%
   dplyr::mutate(`Site Number` = as.numeric(substr(site, 6, 30))) %>% 
   left_join(.,table_s1, by = 'Site Number') %>% 
   dplyr::select(Name, '2008', '2009', '2010','2011','2012','2013','2014','2015','2016','2017','2018','2019','2020','2021')
-  
+
 readr::write_csv(sum_NA_wide,
                  'data/data_citation/ms_usgs_annual_metab/table_s2_sum_NA_wide.csv')
 
@@ -890,7 +893,7 @@ fig_s1 <- ggpubr::ggarrange(fig_s1_map,NULL,
                             ncol = 3,
                             widths = c(3,-0.5,1.5),
                             align = 'v'
-                            )
+)
 fig_s1
 
 if(save_figs) {
@@ -904,10 +907,10 @@ if(save_figs) {
 
 # Figure S2: all sites as supplemental figure
 fig_s2 <- ggplot(river_metab_cumsum_names, 
-                aes(x = jday,
-                    y = GPP_C_cumsum,
-                    group = interaction(year, site),
-                    color = GPP_C_cumsum))+
+                 aes(x = jday,
+                     y = GPP_C_cumsum,
+                     group = interaction(year, site),
+                     color = GPP_C_cumsum))+
   geom_line(show.legend = FALSE)+
   facet_wrap(forcats::fct_relevel(clean_name,
                                   site_mean_ann_gpp %>% 
